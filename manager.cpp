@@ -91,17 +91,23 @@ int charArrayToInt(char *arr)
 //
 void openFile(std::fstream& fstr, const std::string& path)
 {
+    std::filesystem::path filePath(path);
     cout<<'\n';
-    fstr.open(path, ios::in | ios::out | ios::binary);
-    if(fstr) return;
-    fstr.clear();
-    ofstream ofs(path, ios::out | ios::binary);
-    if(ofs){
-        ofs.close();
-        fstr.open(path, ios::in | ios::out | ios::binary);
-        if(fstr) return;
+    
+    // Check if file exists, if not create it
+    if (!std::filesystem::exists(filePath)) {
+        std::ofstream createFile(path, std::ios::binary);
+        if (!createFile) {
+            throw FileException("Failed to create file: " + path);
+        }
+        createFile.close();
     }
-    throw FileException("Failed to open file: " + path);
+    
+    // Open file for reading and writing
+    fstr.open(path, std::ios::in | std::ios::out | std::ios::binary);
+    if (!fstr) {
+        throw FileException("Failed to open file: " + path);
+    }
 }
 
 std::string intToString(int last, const std::string& prefix) {
@@ -2057,17 +2063,23 @@ bool AlbumManager::searchByDateRange(std::fstream& AlbFile, indexSet& result, un
 
 // FileHandler implementations
 void FileHandler::openFile(std::fstream& fstr, const std::string& path) {
+    std::filesystem::path filePath(path);
     cout<<'\n';
-    fstr.open(path, ios::in | ios::out | ios::binary);
-    if(fstr) return;
-    fstr.clear();
-    ofstream ofs(path, ios::out | ios::binary);
-    if(ofs){
-        ofs.close();
-        fstr.open(path, ios::in | ios::out | ios::binary);
-        if(fstr) return;
+    
+    // Check if file exists, if not create it
+    if (!std::filesystem::exists(filePath)) {
+        std::ofstream createFile(path, std::ios::binary);
+        if (!createFile) {
+            throw FileException("Failed to create file: " + path);
+        }
+        createFile.close();
     }
-    throw FileException("Failed to open file: " + path);
+    
+    // Open file for reading and writing
+    fstr.open(path, std::ios::in | std::ios::out | std::ios::binary);
+    if (!fstr) {
+        throw FileException("Failed to open file: " + path);
+    }
 }
 
 // ArtistView implementations
