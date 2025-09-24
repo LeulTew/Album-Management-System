@@ -3,7 +3,6 @@ using namespace std;
 #include <conio.h>
 #include <fstream>
 #include "manager.h"
-#include "manager.cpp"
 
 int main()
 {

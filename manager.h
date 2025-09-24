@@ -1,5 +1,5 @@
-#ifndef MANAGER_H
-#define MANAGER_H
+#ifndef MANAGER_H_INCLUDED
+#define MANAGER_H_INCLUDED
 
 #include <string>
 #include <vector>
@@ -14,7 +14,7 @@
 #include <climits>
 
 const int DEFAULT_SIZE = 10;
-int lastArtistID = 999, lastAlbumID = 1999;
+extern int lastArtistID, lastAlbumID;
 const std::string artistFilePath = "Artist.bin";
 const std::string albumFilePath = "Album.bin";
 
@@ -40,32 +40,6 @@ public:
 class SearchException : public AlbumManagementException {
 public:
     SearchException(const std::string& msg) : AlbumManagementException("Search Error: " + msg) {}
-};
-
-// Data Persistence Interfaces
-class IArtistRepository {
-public:
-    virtual ~IArtistRepository() = default;
-    virtual bool loadArtists(artistList& artists, indexSet& deletedArtists) = 0;
-    virtual bool saveArtists(const artistList& artists, const indexSet& deletedArtists) = 0;
-    virtual bool saveArtist(const Artist& artist) = 0;
-    virtual bool updateArtist(const Artist& artist, int position) = 0;
-    virtual bool deleteArtist(int position) = 0;
-    virtual bool searchArtists(const std::string& query, indexSet& results, bool byId) = 0;
-};
-
-class IAlbumRepository {
-public:
-    virtual ~IAlbumRepository() = default;
-    virtual bool loadAlbums(albumList& albums, indexSet& deletedAlbums) = 0;
-    virtual bool saveAlbums(const albumList& albums, const indexSet& deletedAlbums) = 0;
-    virtual bool saveAlbum(const Album& album) = 0;
-    virtual bool updateAlbum(const Album& album, int position) = 0;
-    virtual bool deleteAlbum(int position) = 0;
-    virtual bool searchAlbumsByArtist(const std::string& artistId, indexSet& results) = 0;
-    virtual bool searchAlbumsByTitle(const std::string& title, indexSet& results) = 0;
-    virtual bool searchAlbumsByDateRange(unsigned int startDay, unsigned int startMonth, unsigned int startYear,
-                                       unsigned int endDay, unsigned int endMonth, unsigned int endYear, indexSet& results) = 0;
 };
 
 // Simple Logging Class
@@ -194,14 +168,40 @@ struct indexSet {
     std::vector<int> indexes;
 };
 
+// Data Persistence Interfaces
+class IArtistRepository {
+public:
+    virtual ~IArtistRepository() = default;
+    virtual bool loadArtists(artistList& artists, indexSet& deletedArtists) = 0;
+    virtual bool saveArtists(const artistList& artists, const indexSet& deletedArtists) = 0;
+    virtual bool saveArtist(const Artist& artist) = 0;
+    virtual bool updateArtist(const Artist& artist, int position) = 0;
+    virtual bool deleteArtist(int position) = 0;
+    virtual bool searchArtists(const std::string& query, indexSet& results, bool byId) = 0;
+};
+
+class IAlbumRepository {
+public:
+    virtual ~IAlbumRepository() = default;
+    virtual bool loadAlbums(albumList& albums, indexSet& deletedAlbums) = 0;
+    virtual bool saveAlbums(const albumList& albums, const indexSet& deletedAlbums) = 0;
+    virtual bool saveAlbum(const Album& album) = 0;
+    virtual bool updateAlbum(const Album& album, int position) = 0;
+    virtual bool deleteAlbum(int position) = 0;
+    virtual bool searchAlbumsByArtist(const std::string& artistId, indexSet& results) = 0;
+    virtual bool searchAlbumsByTitle(const std::string& title, indexSet& results) = 0;
+    virtual bool searchAlbumsByDateRange(unsigned int startDay, unsigned int startMonth, unsigned int startYear,
+                                       unsigned int endDay, unsigned int endMonth, unsigned int endYear, indexSet& results) = 0;
+};
+
 class FileHandler;
 
 // View Classes for MVC-like separation
 class ArtistView {
 public:
-    static void displayAll(std::fstream& ArtFile, const artistList& artist);
-    static void displaySearchResult(std::fstream& ArtFile, const artistList& artist, const indexSet& result);
-    static void displayOne(std::fstream& ArtFile, const artistList& artist, int idx);
+    static void displayAll(const artistList& artist);
+    static void displaySearchResult(const artistList& artist, const indexSet& result);
+    static void displayOne(const artistList& artist, int idx);
     static void displayStatistics(const artistList& artist, const albumList& album);
 };
 
@@ -320,6 +320,7 @@ public:
     explicit ArtistManager(std::unique_ptr<IArtistRepository> repo) : repository(std::move(repo)) {}
     ArtistManager() = default;
     bool load(std::fstream& file);
+    bool save(std::fstream& file);
     bool add(std::fstream& file);
     void edit(std::fstream& file, indexSet& result);
     void remove(std::fstream& file, std::fstream& albFile, AlbumManager& albumManager, indexSet& result);
@@ -345,6 +346,7 @@ public:
     explicit AlbumManager(std::unique_ptr<IAlbumRepository> repo) : repository(std::move(repo)) {}
     AlbumManager() = default;
     bool load(std::fstream& file);
+    bool save(std::fstream& file);
     bool add(std::fstream& artFile, std::fstream& albFile, const ArtistManager& artistManager, indexSet& result);
     void edit(std::fstream& artFile, std::fstream& albFile, const ArtistManager& artistManager, indexSet& result);
     void remove(std::fstream& albFile, indexSet& result, int idx);
@@ -372,6 +374,7 @@ public:
     ~FileArtistRepository() override = default;
     
     bool loadArtists(artistList& artists, indexSet& deletedArtists) override;
+    bool saveArtists(const artistList& artists, const indexSet& deletedArtists) override;
     bool saveArtist(const Artist& artist) override;
     bool updateArtist(const Artist& artist, int position) override;
     bool deleteArtist(int position) override;
@@ -388,6 +391,7 @@ public:
     ~FileAlbumRepository() override = default;
     
     bool loadAlbums(albumList& albums, indexSet& deletedAlbums) override;
+    bool saveAlbums(const albumList& albums, const indexSet& deletedAlbums) override;
     bool saveAlbum(const Album& album) override;
     bool updateAlbum(const Album& album, int position) override;
     bool deleteAlbum(int position) override;
@@ -408,5 +412,4 @@ public:
     const std::string& getAlbumFilePath() const { return albumFilePath; }
 };
 
-#endif
-// MANAGER_H_INCLUDED
+#endif // MANAGER_H_INCLUDED
