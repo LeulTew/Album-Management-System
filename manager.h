@@ -6,6 +6,11 @@
 #include <exception>
 #include <algorithm>
 
+const int DEFAULT_SIZE = 10;
+int lastArtistID = 999, lastAlbumID = 1999;
+const std::string artistFilePath = "Artist.bin";
+const std::string albumFilePath = "Album.bin";
+
 // Custom Exception Classes
 class AlbumManagementException : public std::exception {
 private:
@@ -82,6 +87,32 @@ struct AlbumFile {
     char paths[100];
 };
 
+class Album {
+private:
+    std::string albumId;
+    std::string artistId;
+    std::string title;
+    std::string recordFormat;
+    std::string datePublished;
+    std::string path;
+public:
+    Album() = default;
+    Album(const std::string& aid, const std::string& artid, const std::string& t, const std::string& rf, const std::string& dp, const std::string& p)
+        : albumId(aid), artistId(artid), title(t), recordFormat(rf), datePublished(dp), path(p) {}
+    const std::string& getAlbumId() const { return albumId; }
+    const std::string& getArtistId() const { return artistId; }
+    const std::string& getTitle() const { return title; }
+    const std::string& getRecordFormat() const { return recordFormat; }
+    const std::string& getDatePublished() const { return datePublished; }
+    const std::string& getPath() const { return path; }
+    void setAlbumId(const std::string& aid) { albumId = aid; }
+    void setArtistId(const std::string& artid) { artistId = artid; }
+    void setTitle(const std::string& t) { title = t; }
+    void setRecordFormat(const std::string& rf) { recordFormat = rf; }
+    void setDatePublished(const std::string& dp) { datePublished = dp; }
+    void setPath(const std::string& p) { path = p; }
+};
+
 struct albumIndex {
     std::string albumId; //start from 2000
     std::string artistId; //start from 1000
@@ -97,6 +128,8 @@ struct indexSet {
     std::vector<int> indexes;
 };
 
+class AlbumManager;
+class FileHandler;
 
 //Prototype Declarations
 void welcome();
@@ -183,10 +216,62 @@ bool searchAlbumByTitle(std::fstream& AlbFile, const albumList& album, indexSet&
 bool searchAlbumByDateRange(std::fstream& AlbFile, const albumList& album, indexSet& result, unsigned int startDay, unsigned int startMonth, unsigned int startYear, unsigned int endDay, unsigned int endMonth, unsigned int endYear);
 void advancedSearchAlbums(std::fstream& AlbFile, const albumList& album, indexSet& result);
 
-const int DEFAULT_SIZE = 10;
-int lastArtistID = 999, lastAlbumID = 1999;
-const std::string artistFilePath = "Artist.bin";
-const std::string albumFilePath = "Album.bin";
+class ArtistManager {
+private:
+    artistList artists;
+    indexSet deletedArtists;
+public:
+    ArtistManager() = default;
+    bool load(std::fstream& file);
+    bool add(std::fstream& file);
+    void edit(std::fstream& file, indexSet& result);
+    void remove(std::fstream& file, std::fstream& albFile, AlbumManager& albumManager, indexSet& result);
+    bool search(std::fstream& file, indexSet& result) const;
+    void displayAll(std::fstream& file) const;
+    void displaySearchResult(std::fstream& file, const indexSet& result) const;
+    int selectArtist(std::fstream& file, indexSet& result, const std::string& forWhat) const;
+    void displayOne(std::fstream& file, int idx) const;
+    const artistList& getArtists() const { return artists; }
+    artistList& getArtists() { return artists; }
+    const indexSet& getDeletedArtists() const { return deletedArtists; }
+    indexSet& getDeletedArtists() { return deletedArtists; }
+    void sortArtists();
+};
+
+class AlbumManager {
+private:
+    albumList albums;
+    indexSet deletedAlbums;
+public:
+    AlbumManager() = default;
+    bool load(std::fstream& file);
+    bool add(std::fstream& artFile, std::fstream& albFile, const ArtistManager& artistManager, indexSet& result);
+    void edit(std::fstream& artFile, std::fstream& albFile, const ArtistManager& artistManager, indexSet& result);
+    void remove(std::fstream& albFile, indexSet& result, int idx);
+    bool searchByArtistId(std::fstream& file, indexSet& result, const std::string& targetId);
+    bool searchByTitle(std::fstream& file, indexSet& result, const std::string& title);
+    bool searchByDateRange(std::fstream& file, indexSet& result, unsigned int startDay, unsigned int startMonth, unsigned int startYear, unsigned int endDay, unsigned int endMonth, unsigned int endYear);
+    void displayAll(std::fstream& file) const;
+    void displaySearchResult(std::fstream& file, const indexSet& result) const;
+    int selectAlbum(std::fstream& file, const ArtistManager& artistManager, indexSet& result, int idx, const std::string& forWhat);
+    void displayOne(std::fstream& file, int idx) const;
+    const albumList& getAlbums() const { return albums; }
+    albumList& getAlbums() { return albums; }
+    const indexSet& getDeletedAlbums() const { return deletedAlbums; }
+    indexSet& getDeletedAlbums() { return deletedAlbums; }
+    void sortAlbums();
+};
+
+class FileHandler {
+private:
+    std::string artistFilePath = "Artist.bin";
+    std::string albumFilePath = "Album.bin";
+public:
+    FileHandler() = default;
+    void openFile(std::fstream& fstr, const std::string& path);
+    const std::string& getArtistFilePath() const { return artistFilePath; }
+    const std::string& getAlbumFilePath() const { return albumFilePath; }
+};
 
 #endif
 // MANAGER_H_INCLUDED
