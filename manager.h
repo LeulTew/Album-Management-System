@@ -5,11 +5,12 @@
 #include <vector>
 #include <exception>
 #include <algorithm>
+#include <filesystem>
 
 const int DEFAULT_SIZE = 10;
 int lastArtistID = 999, lastAlbumID = 1999;
-const std::string artistFilePath = "Artist.bin";
-const std::string albumFilePath = "Album.bin";
+const std::filesystem::path artistFilePath = "Artist.bin";
+const std::filesystem::path albumFilePath = "Album.bin";
 
 // Custom Exception Classes
 class AlbumManagementException : public std::exception {
@@ -136,7 +137,7 @@ void welcome();
 void printError(int errId);
 std::string intToString(int last, const std::string& prefix);
 int stringToInt(const std::string& arr);
-void openFile(std::fstream& fstr, const std::string& path);
+void openFile(std::fstream& fstr, const std::filesystem::path& path);
 
 
 bool loading(std::fstream& ArtFile, std::fstream& AlbFile, artistList& artist, albumList& album, indexSet& delArtFile, indexSet& delAlbFile);
@@ -264,13 +265,13 @@ public:
 
 class FileHandler {
 private:
-    std::string artistFilePath = "Artist.bin";
-    std::string albumFilePath = "Album.bin";
+    std::filesystem::path artistFilePath = "Artist.bin";
+    std::filesystem::path albumFilePath = "Album.bin";
 public:
     FileHandler() = default;
-    void openFile(std::fstream& fstr, const std::string& path);
-    const std::string& getArtistFilePath() const { return artistFilePath; }
-    const std::string& getAlbumFilePath() const { return albumFilePath; }
+    void openFile(std::fstream& fstr, const std::filesystem::path& path);
+    const std::filesystem::path& getArtistFilePath() const { return artistFilePath; }
+    const std::filesystem::path& getAlbumFilePath() const { return albumFilePath; }
 };
 
 #endif

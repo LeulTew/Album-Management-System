@@ -13,7 +13,7 @@ Transform the existing C++ console-based Album Management System into a modern, 
 - **1.3** ✅ Add comprehensive exception handling with custom exception classes
 - **1.4** ✅ Use modern C++ features (auto, range-based loops, lambda functions)
 - **1.5** ✅ Replace C-style strings and arrays with std::string and std::vector
-- **1.6** Use std::filesystem for file operations instead of C-style file I/O
+- **1.6** ✅ Use std::filesystem for file operations instead of C-style file I/O
 
 ### 2. Architecture Refactoring
 - **2.1** ✅ Convert structs to proper classes with encapsulation

@@ -87,7 +87,7 @@ int charArrayToInt(char *arr)
 }
 
 //
-void openFile(std::fstream& fstr, const std::string& path)
+void openFile(std::fstream& fstr, const std::filesystem::path& path)
 {
     cout<<'\n';
     fstr.open(path, ios::in | ios::out | ios::binary);
@@ -99,7 +99,7 @@ void openFile(std::fstream& fstr, const std::string& path)
         fstr.open(path, ios::in | ios::out | ios::binary);
         if(fstr) return;
     }
-    throw FileException("Failed to open file: " + path);
+    throw FileException("Failed to open file: " + path.string());
 }
 
 std::string intToString(int last, const std::string& prefix) {
@@ -2203,7 +2203,7 @@ bool AlbumManager::searchByDateRange(std::fstream& AlbFile, indexSet& result, un
 }
 
 // FileHandler implementations
-void FileHandler::openFile(std::fstream& fstr, const std::string& path) {
+void FileHandler::openFile(std::fstream& fstr, const std::filesystem::path& path) {
     cout<<'\n';
     fstr.open(path, ios::in | ios::out | ios::binary);
     if(fstr) return;
@@ -2214,5 +2214,5 @@ void FileHandler::openFile(std::fstream& fstr, const std::string& path) {
         fstr.open(path, ios::in | ios::out | ios::binary);
         if(fstr) return;
     }
-    throw FileException("Failed to open file: " + path);
+    throw FileException("Failed to open file: " + path.string());
 }
