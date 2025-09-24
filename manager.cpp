@@ -131,10 +131,19 @@ bool loading(fstream & ArtFile, fstream & AlbFile, artistList & artist, albumLis
     system("clear");
     cout<<"\n";
     system("cls");
-    if (!loadArtist(ArtFile,artist,delArtFile))
+
+    // Check if files are empty and create sample data if needed
+    if (!loadArtist(ArtFile, artist, delArtFile) || artist.artList.empty()) {
+        // createSampleData(ArtFile, AlbFile, artist, album);
+        // Reload after creating sample data
+        // artist.artList.clear();
+        // album.albList.clear();
+        // loadArtist(ArtFile, artist, delArtFile);
+    }
+
+    if(!loadAlbum(AlbFile, album, delAlbFile))
         return false;
-    if(!loadAlbum(AlbFile,album,delAlbFile))
-        return false;
+
     return true;
 }
 
@@ -449,11 +458,17 @@ void displayAllArtist(std::fstream& ArtFile, const artistList& artist)
     ArtistFile artFile;
     int idx = 0;
 
-    cout << "   " << setfill(' ') << left << setw(4) << "No" << setw(20) << "Name" << setw(15) << "Artist ID" << setw(10) << "Gender" << setw(15) << "Phone Number" << setw(25) << "Email" << endl;
+    cout << "   " << left << setw(4) << "No" << setw(25) << "Name" << setw(12) << "Artist ID" << setw(8) << "Gender" << setw(15) << "Phone" << setw(30) << "Email" << endl;
+    cout << "   " << string(90, '-') << endl;
     for(size_t i = 0; i < artist.artList.size(); i++){
         ArtFile.seekg(artist.artList[i].pos, ios::beg);
         ArtFile.read((char*)&artFile, sizeof(artFile));
-        cout << "   " << setw(4) << idx+1 << setw(20) << std::string(artFile.names) << setw(15) << std::string(artFile.artistIds) << setw(10) << artFile.genders << setw(15) << std::string(artFile.phones) << setw(25) << std::string(artFile.emails) << endl;
+        cout << "   " << setw(4) << idx+1
+             << setw(25) << std::string(artFile.names).c_str()
+             << setw(12) << std::string(artFile.artistIds).c_str()
+             << setw(8) << artFile.genders
+             << setw(15) << std::string(artFile.phones).c_str()
+             << setw(30) << std::string(artFile.emails).c_str() << endl;
         idx++;
     }
     if(idx == 0){
