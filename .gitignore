@@ -17,7 +17,7 @@ obj/
 *.workspace
 
 # Data files
-*.bin
+#*.bin
 
 # OS files
 .DS_Store
