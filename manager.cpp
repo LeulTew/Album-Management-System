@@ -371,6 +371,7 @@ bool artistManager(fstream & ArtFile, fstream & AlbFile, artistList &artist, alb
             exportArtistsToCSV(artist, "artists.csv");
             cout << endl << endl;
             system("pause");
+            exit = true;
         }
         if (choice ==4)
             return false;
@@ -983,6 +984,7 @@ bool albumManager(fstream & ArtFile, fstream & AlbFile, artistList &artist, albu
             exportAlbumsToCSV(album, "albums.csv");
             cout << endl << endl;
             system("pause");
+            exit = true;
         }
         if (choice ==4)
             return false;
