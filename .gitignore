@@ -1,0 +1,29 @@
+# Build artifacts
+bin/
+obj/
+*.exe
+*.o
+*.obj
+*.lib
+*.a
+*.dll
+*.so
+*.dylib
+
+# IDE files
+*.cbp
+*.depend
+*.layout
+*.workspace
+
+# Data files
+*.bin
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Temporary files
+*.tmp
+*.temp
+*.log

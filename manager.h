@@ -1,0 +1,160 @@
+#ifndef MANAGER_H
+#define MANAGER_H
+
+#include <string>
+#include <vector>
+
+//Artist information
+struct ArtistFile {
+    char artistIds[8];
+    char names[50];
+    char genders;
+    char phones[15];
+    char emails[50];
+};
+
+struct Artist {
+    std::string artistId;
+    std::string name;
+    char gender;
+    std::string phone;
+    std::string email;
+};
+
+struct artistIndex {
+    std::string artistId; //start from 1000
+    std::string name;
+    long pos;
+};
+
+struct artistList {
+    std::vector<artistIndex> artList;
+};
+
+//Album information
+struct AlbumFile {
+    char albumIds[8];
+    char artistIdRefs[8];
+    char titles[80];
+    char recordFormats[12];
+    char datePublished[11];
+    char paths[100];
+};
+
+struct Album {
+    std::string albumId;
+    std::string artistIdRef;
+    std::string title;
+    std::string recordFormat;
+    std::string datePublished;
+    std::string path;
+};
+
+struct albumIndex {
+    std::string albumId; //start from 2000
+    std::string artistId; //start from 1000
+    std::string title;
+    long pos;
+};
+
+struct albumList {
+    std::vector<albumIndex> albList;
+};
+
+struct indexSet {
+    std::vector<int> indexes;
+};
+
+
+//Prototype Declarations
+void welcome();
+void printError(int errId);
+std::string intToString(int last, const std::string& prefix);
+int stringToInt(const std::string& arr);
+bool openFile(std::fstream& fstr, const std::string& path);
+
+
+bool loading(std::fstream& ArtFile, std::fstream& AlbFile, artistList& artist, albumList& album, indexSet& delArtFile, indexSet& delAlbFile);
+bool loadArtist(std::fstream& ArtFile, artistList& artist, indexSet& delArtFile);
+bool loadAlbum(std::fstream& AlbFile, albumList& album, indexSet& delAlbFile);
+void sortArtist(artistList& artist);
+void sortAlbum(albumList& album);
+void mainH(std::fstream& ArtFile, std::fstream& AlbFile, artistList& artist, albumList& album, indexSet& result, indexSet& delArtArray, indexSet& delAlbArray);
+int mainMenu();
+void farewell();
+
+bool artistManager(std::fstream& ArtFile, std::fstream& AlbFile, artistList& artist, albumList& album, indexSet& result, indexSet& delArtArray, indexSet& delAlbArray);
+int artistMenu();
+bool artistViewer(std::fstream& ArtFile, const artistList& artist, indexSet& result);
+int viewArtistMenu();
+void displayAllArtist(std::fstream& ArtFile, const artistList& artist);
+void viewArtistBySearch(std::fstream& ArtFile, const artistList& artist, indexSet& result);
+bool searchArtist(std::fstream& ArtFile, const artistList& artist, indexSet& result);
+bool searchArtistById(const artistList& artist, indexSet& result, const std::string& targetId);
+bool searchArtistByName(const artistList& artist, indexSet& result, const std::string& targetName);
+void displaySearchResult(std::fstream& ArtFile, const artistList& artist, const indexSet& result);
+bool artistEditor(std::fstream& ArtFile, std::fstream& AlbFile, artistList& artist, albumList& album, indexSet& result, indexSet& delArtArray, indexSet& delAlbArray);
+int editArtistMenu();
+bool addArtist(std::fstream& ArtFile, artistList& artist);
+Artist getArtistInfo();
+std::string getArtistName();
+char getArtistGender();
+std::string getArtistPhone();
+std::string getArtistEmail();
+bool validateName(const std::string& name);
+std::string formatName(std::string name);
+bool validateGender(char gender);
+bool validatePhone(const std::string& phone);
+bool validateEmail(const std::string& email);
+std::string formatEmail(std::string email);
+void editArtist(std::fstream& ArtFile, artistList& artist, indexSet& result);
+int selectArtist(std::fstream& ArtFile, const artistList& artist, indexSet& result, const std::string& forWhat);
+bool editArtistInfo(std::fstream& ArtFile, artistList& artist, int idx);
+void displayOneArtist(std::fstream& ArtFile, const artistList& artist, int idx);
+void deleteArtist(std::fstream& ArtFile, std::fstream& AlbFile, artistList& artist, albumList& album, indexSet& result, indexSet& delArtArray, indexSet& delAlbArray);
+void removeArtist(std::fstream& ArtFile, std::fstream& AlbFile, artistList& artist, albumList& album, indexSet& delArtArray, indexSet& delAlbArray, int idx);
+void removeArtistAllAlbums(std::fstream& ArtFile, std::fstream& AlbFile, const artistList& artist, albumList& album, indexSet& delAlbArray, int i);
+
+bool albumManager(std::fstream& ArtFile, std::fstream& AlbFile, artistList& artist, albumList& album, indexSet& result, indexSet& delArtArray, indexSet& delAlbArray);
+int albumMenu();
+bool albumViewer(std::fstream& AlbFile, const albumList& album, indexSet& result);
+int viewAlbumMenu();
+void displayAllAlbums(std::fstream& AlbFile, const albumList& album);
+bool searchAlbumByArtistId(std::fstream& AlbFile, const albumList& album, indexSet& result, const std::string& targetId);
+void displayAlbumSearchResult(std::fstream& AlbFile, const albumList& album, const indexSet& result);
+bool albumEditor(std::fstream& ArtFile, std::fstream& AlbFile, const artistList& artist, albumList& album, indexSet& result, indexSet& delArtArray, indexSet& delAlbArray);
+int editAlbumMenu();
+bool addAlbum(std::fstream& ArtFile, std::fstream& AlbFile, const artistList& artist, albumList& album, indexSet& result);
+AlbumFile getAlbumInfo();
+std::string getAlbumTitle();
+std::string getAlbumRecordFormat();
+std::string getAlbumDate();
+std::string getAlbumPath();
+bool validateAlbumTitle(const std::string& albumTitle);
+std::string formatAlbumTitle(std::string albumTitle);
+bool validateAlbumFormat(const std::string& albumFormat);
+std::string formatAlbumFormat(std::string albumFormat);
+bool validateAlbumDate(unsigned int day, unsigned int month, unsigned int year);
+std::string formatAlbumDate(unsigned int day, unsigned int month, unsigned int year);
+bool validateAlbumPath(const std::string& albumPath);
+std::string formatAlbumPath(std::string albumPath);
+void editAlbum(std::fstream& ArtFile, std::fstream& AlbFile, const artistList& artist, albumList& album, indexSet& result);
+int selectAlbum(std::fstream& AlbFile, const artistList& artist, const albumList& album, indexSet& result, int idx, const std::string& forWhat);
+bool editAlbumInfo(std::fstream& AlbFile, albumList& album, int idx);
+void displayOneAlbum(std::fstream& AlbFile, const albumList& album, int idx);
+void deleteAlbum(std::fstream& ArtFile, std::fstream& AlbFile, const artistList& artist, albumList& album, indexSet& result, indexSet& delAlbArray);
+void removeAlbum(std::fstream& AlbFile, albumList& album, indexSet& delAlbArray, int idx);
+
+void displayStatistics(const artistList& artist, const albumList& album);
+
+bool searchAlbumByTitle(std::fstream& AlbFile, const albumList& album, indexSet& result, const std::string& title);
+bool searchAlbumByDateRange(std::fstream& AlbFile, const albumList& album, indexSet& result, unsigned int startDay, unsigned int startMonth, unsigned int startYear, unsigned int endDay, unsigned int endMonth, unsigned int endYear);
+void advancedSearchAlbums(std::fstream& AlbFile, const albumList& album, indexSet& result);
+
+const int DEFAULT_SIZE = 10;
+int lastArtistID = 999, lastAlbumID = 1999;
+const std::string artistFilePath = "Artist.bin";
+const std::string albumFilePath = "Album.bin";
+
+#endif
+// MANAGER_H_INCLUDED
