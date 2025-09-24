@@ -308,6 +308,14 @@ bool searchAlbumByTitle(std::fstream& AlbFile, const albumList& album, indexSet&
 bool searchAlbumByDateRange(std::fstream& AlbFile, const albumList& album, indexSet& result, unsigned int startDay, unsigned int startMonth, unsigned int startYear, unsigned int endDay, unsigned int endMonth, unsigned int endYear);
 void advancedSearchAlbums(std::fstream& AlbFile, const albumList& album, indexSet& result);
 
+// Command pattern helpers
+bool undoLastAction();
+bool redoLastAction();
+bool canUndo();
+bool canRedo();
+std::string getNextUndoDescription();
+std::string getNextRedoDescription();
+
 class AlbumManager;
 
 class ArtistManager {

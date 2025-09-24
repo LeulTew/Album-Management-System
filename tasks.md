@@ -20,7 +20,7 @@ Transform the existing C++ console-based Album Management System into a modern, 
 - **2.2** ✅ Create separate classes: Artist, Album, ArtistManager, AlbumManager, FileHandler
 - **2.3** ✅ Implement proper separation of concerns (MVC-like pattern)
 - **2.4** ✅ Add an interface layer for data persistence (Repository pattern implemented with IArtistRepository and IAlbumRepository interfaces, FileArtistRepository and FileAlbumRepository concrete implementations, dependency injection in Manager classes)
-- **2.5** Implement the Command pattern for undo/redo functionality
+- **2.5** ✅ Implement the Command pattern for undo/redo functionality
 
 ### 3. Feature Enhancements
 - **3.1** ✅ Add export functionality (CSV, JSON formats)
@@ -70,7 +70,7 @@ Transform the existing C++ console-based Album Management System into a modern, 
 - [x] Ensure album edits reopen and flush `Album.bin` to prevent stale data after validation
 - [x] Reopen and flush album deletions (single and bulk) to avoid ghost records in listings
 - [x] Guard album additions against closed/failed streams before appending new records
-- [ ] Review repository-layer write/delete helpers to add missing flush calls and error handling
+- [x] Review repository-layer write/delete helpers to add missing flush calls and error handling
 
 
 ## Implementation Strategy

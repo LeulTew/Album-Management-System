@@ -7,6 +7,8 @@
 #include <ctime>
 #include <unistd.h>
 #include <algorithm>
+#include <functional>
+#include <stack>
 #include <cctype>
 #include <cstdio>
 #include "manager.h"
@@ -15,6 +17,332 @@ using namespace std;
 
 int lastArtistID = 999, lastAlbumID = 1999;
 Logger* Logger::instance = nullptr;
+
+struct CommandAction {
+    std::function<bool()> redo;
+    std::function<void()> undo;
+    std::string description;
+};
+
+class CommandManager {
+private:
+    std::stack<CommandAction> undoStack;
+    std::stack<CommandAction> redoStack;
+
+public:
+    bool execute(CommandAction action) {
+        if (action.redo && action.redo()) {
+            undoStack.push(action);
+            // Clear redo history after a new operation
+            while (!redoStack.empty()) {
+                redoStack.pop();
+            }
+            return true;
+        }
+        return false;
+    }
+
+    bool undo() {
+        if (undoStack.empty()) {
+            return false;
+        }
+        CommandAction action = undoStack.top();
+        undoStack.pop();
+        if (action.undo) {
+            action.undo();
+        }
+        redoStack.push(action);
+        return true;
+    }
+
+    bool redo() {
+        if (redoStack.empty()) {
+            return false;
+        }
+        CommandAction action = redoStack.top();
+        redoStack.pop();
+        if (action.redo && action.redo()) {
+            undoStack.push(action);
+            return true;
+        }
+        return false;
+    }
+
+    bool canUndo() const {
+        return !undoStack.empty();
+    }
+
+    bool canRedo() const {
+        return !redoStack.empty();
+    }
+
+    std::string nextUndoDescription() const {
+        if (undoStack.empty()) {
+            return "";
+        }
+        return undoStack.top().description;
+    }
+
+    std::string nextRedoDescription() const {
+        if (redoStack.empty()) {
+            return "";
+        }
+        return redoStack.top().description;
+    }
+
+    void clear() {
+        while (!undoStack.empty()) undoStack.pop();
+        while (!redoStack.empty()) redoStack.pop();
+    }
+};
+
+static CommandManager commandManager;
+
+bool undoLastAction() {
+    return commandManager.undo();
+}
+
+bool redoLastAction() {
+    return commandManager.redo();
+}
+
+bool canUndo() {
+    return commandManager.canUndo();
+}
+
+bool canRedo() {
+    return commandManager.canRedo();
+}
+
+std::string getNextUndoDescription() {
+    return commandManager.nextUndoDescription();
+}
+
+std::string getNextRedoDescription() {
+    return commandManager.nextRedoDescription();
+}
+
+static bool executeCommand(CommandAction action) {
+    return commandManager.execute(std::move(action));
+}
+
+struct ArtistCommandState {
+    Artist artist;
+    long pos = -1;
+};
+
+struct ArtistEditState {
+    Artist original;
+    Artist updated;
+    long pos = -1;
+    bool applied = false;
+};
+
+struct AlbumCommandState {
+    Album album;
+    long pos = -1;
+};
+
+struct AlbumEditState {
+    Album original;
+    Album updated;
+    long pos = -1;
+    bool applied = false;
+};
+
+struct AlbumSnapshot {
+    Album data;
+    long pos = -1;
+};
+
+struct ArtistRemovalState {
+    Artist artist;
+    long pos = -1;
+    int artistIndex = -1;
+    std::vector<AlbumSnapshot> associatedAlbums;
+};
+
+struct AlbumRemovalState {
+    Album album;
+    long pos = -1;
+    int index = -1;
+};
+
+static bool ensureArtistStream(std::fstream& ArtFile) {
+    if (ArtFile.is_open()) {
+        return true;
+    }
+    try {
+        openFile(ArtFile, artistFilePath);
+        return true;
+    } catch (const FileException& e) {
+        cout << e.what() << endl;
+        system("pause");
+        return false;
+    }
+}
+
+static bool ensureAlbumStream(std::fstream& AlbFile) {
+    if (AlbFile.is_open()) {
+        return true;
+    }
+    try {
+        openFile(AlbFile, albumFilePath);
+        return true;
+    } catch (const FileException& e) {
+        cout << e.what() << endl;
+        system("pause");
+        return false;
+    }
+}
+
+static ArtistFile toArtistFile(const Artist& artist) {
+    ArtistFile artFile{};
+    strncpy(artFile.artistIds, artist.getArtistId().c_str(), 7);
+    artFile.artistIds[7] = '\0';
+    strncpy(artFile.names, artist.getName().c_str(), 49);
+    artFile.names[49] = '\0';
+    artFile.genders = artist.getGender();
+    strncpy(artFile.phones, artist.getPhone().c_str(), 14);
+    artFile.phones[14] = '\0';
+    strncpy(artFile.emails, artist.getEmail().c_str(), 49);
+    artFile.emails[49] = '\0';
+    return artFile;
+}
+
+static Artist fromArtistFile(const ArtistFile& artFile) {
+    Artist artist;
+    artist.setArtistId(std::string(artFile.artistIds));
+    artist.setName(std::string(artFile.names));
+    artist.setGender(artFile.genders);
+    artist.setPhone(std::string(artFile.phones));
+    artist.setEmail(std::string(artFile.emails));
+    return artist;
+}
+
+static AlbumFile toAlbumFile(const Album& album) {
+    AlbumFile albFile{};
+    strncpy(albFile.albumIds, album.getAlbumId().c_str(), 7);
+    albFile.albumIds[7] = '\0';
+    strncpy(albFile.artistIdRefs, album.getArtistId().c_str(), 7);
+    albFile.artistIdRefs[7] = '\0';
+    strncpy(albFile.titles, album.getTitle().c_str(), 79);
+    albFile.titles[79] = '\0';
+    strncpy(albFile.recordFormats, album.getRecordFormat().c_str(), 11);
+    albFile.recordFormats[11] = '\0';
+    strncpy(albFile.datePublished, album.getDatePublished().c_str(), 10);
+    albFile.datePublished[10] = '\0';
+    strncpy(albFile.paths, album.getPath().c_str(), 99);
+    albFile.paths[99] = '\0';
+    return albFile;
+}
+
+static Album fromAlbumFile(const AlbumFile& albFile) {
+    Album album;
+    album.setAlbumId(std::string(albFile.albumIds));
+    album.setArtistId(std::string(albFile.artistIdRefs));
+    album.setTitle(std::string(albFile.titles));
+    album.setRecordFormat(std::string(albFile.recordFormats));
+    album.setDatePublished(std::string(albFile.datePublished));
+    album.setPath(std::string(albFile.paths));
+    return album;
+}
+
+static bool readArtistAtPosition(std::fstream& ArtFile, long pos, Artist& artist) {
+    if (!ensureArtistStream(ArtFile)) {
+        return false;
+    }
+    ArtistFile artFile{};
+    ArtFile.clear();
+    ArtFile.seekg(pos, std::ios::beg);
+    if (!ArtFile.read(reinterpret_cast<char*>(&artFile), sizeof(ArtistFile))) {
+        return false;
+    }
+    artist = fromArtistFile(artFile);
+    return true;
+}
+
+static bool writeArtistAtPosition(std::fstream& ArtFile, long pos, const Artist& artist) {
+    if (!ensureArtistStream(ArtFile)) {
+        return false;
+    }
+    ArtistFile artFile = toArtistFile(artist);
+    ArtFile.clear();
+    ArtFile.seekp(pos, std::ios::beg);
+    ArtFile.write(reinterpret_cast<const char*>(&artFile), sizeof(ArtistFile));
+    ArtFile.flush();
+    return static_cast<bool>(ArtFile);
+}
+
+static bool appendArtistRecord(std::fstream& ArtFile, const Artist& artist, long& outPos) {
+    if (!ensureArtistStream(ArtFile)) {
+        return false;
+    }
+    ArtistFile artFile = toArtistFile(artist);
+    ArtFile.clear();
+    ArtFile.seekp(0, std::ios::end);
+    outPos = ArtFile.tellp();
+    ArtFile.write(reinterpret_cast<const char*>(&artFile), sizeof(ArtistFile));
+    ArtFile.flush();
+    return static_cast<bool>(ArtFile);
+}
+
+static bool readAlbumAtPosition(std::fstream& AlbFile, long pos, Album& album) {
+    if (!ensureAlbumStream(AlbFile)) {
+        return false;
+    }
+    AlbumFile albFile{};
+    AlbFile.clear();
+    AlbFile.seekg(pos, std::ios::beg);
+    if (!AlbFile.read(reinterpret_cast<char*>(&albFile), sizeof(AlbumFile))) {
+        return false;
+    }
+    album = fromAlbumFile(albFile);
+    return true;
+}
+
+static bool writeAlbumAtPosition(std::fstream& AlbFile, long pos, const Album& album) {
+    if (!ensureAlbumStream(AlbFile)) {
+        return false;
+    }
+    AlbumFile albFile = toAlbumFile(album);
+    AlbFile.clear();
+    AlbFile.seekp(pos, std::ios::beg);
+    AlbFile.write(reinterpret_cast<const char*>(&albFile), sizeof(AlbumFile));
+    AlbFile.flush();
+    return static_cast<bool>(AlbFile);
+}
+
+static bool appendAlbumRecord(std::fstream& AlbFile, const Album& album, long& outPos) {
+    if (!ensureAlbumStream(AlbFile)) {
+        return false;
+    }
+    AlbumFile albFile = toAlbumFile(album);
+    AlbFile.clear();
+    AlbFile.seekp(0, std::ios::end);
+    outPos = AlbFile.tellp();
+    AlbFile.write(reinterpret_cast<const char*>(&albFile), sizeof(AlbumFile));
+    AlbFile.flush();
+    return static_cast<bool>(AlbFile);
+}
+
+static int findArtistIndexById(const artistList& artists, const std::string& artistId) {
+    for (size_t i = 0; i < artists.artList.size(); ++i) {
+        if (artists.artList[i].artistId == artistId) {
+            return static_cast<int>(i);
+        }
+    }
+    return -1;
+}
+
+static int findAlbumIndexById(const albumList& albums, const std::string& albumId) {
+    for (size_t i = 0; i < albums.albList.size(); ++i) {
+        if (albums.albList[i].albumId == albumId) {
+            return static_cast<int>(i);
+        }
+    }
+    return -1;
+}
 
 void welcome()  //2
 {
@@ -220,9 +548,9 @@ bool loadAlbum(std::fstream& AlbFile, albumList& album, indexSet& delAlbFile)
         albFile.titles[79] = '\0';
         if (std::string(albFile.albumIds) != "-1"){
             album.albList.push_back(albumIndex{std::string(albFile.albumIds), std::string(albFile.artistIdRefs), std::string(albFile.titles), pos});
-            std::string id = intToString(lastAlbumID, "alb");
-            if (std::string(albFile.albumIds) > id){
-                lastAlbumID = stringToInt(std::string(albFile.albumIds));
+            int currentId = stringToInt(std::string(albFile.albumIds));
+            if (currentId > lastAlbumID){
+                lastAlbumID = currentId;
             }
         }
         else{
@@ -257,15 +585,46 @@ void mainH(fstream & ArtFile, fstream & AlbFile, artistList & artist, albumList 
     do
     {
         int choice=MenuView::mainMenu();
-        if (choice ==1)
-            exit=artistManager(ArtFile,AlbFile,artist,album,result,delArtArray,delAlbArray);
-        if (choice ==2)
-            exit=albumManager(ArtFile,AlbFile,artist,album,result,delArtArray,delAlbArray);
-        if (choice ==3)
-            displayStatistics(artist, album);
-        if (choice ==4) {
-            displayStatistics(artist, album);
-            exit=true;
+        switch (choice) {
+            case 1:
+                exit = artistManager(ArtFile,AlbFile,artist,album,result,delArtArray,delAlbArray);
+                break;
+            case 2:
+                exit = albumManager(ArtFile,AlbFile,artist,album,result,delArtArray,delAlbArray);
+                break;
+            case 3:
+                displayStatistics(artist, album);
+                exit = false;
+                break;
+            case 4: {
+                std::string desc = getNextUndoDescription();
+                if (undoLastAction()) {
+                    cout << "Undid: " << (desc.empty() ? "last action" : desc) << endl;
+                } else {
+                    cout << "Nothing to undo." << endl;
+                }
+                system("pause");
+                exit = false;
+                break;
+            }
+            case 5: {
+                std::string desc = getNextRedoDescription();
+                if (redoLastAction()) {
+                    cout << "Redid: " << (desc.empty() ? "last action" : desc) << endl;
+                } else {
+                    cout << "Nothing to redo." << endl;
+                }
+                system("pause");
+                exit = false;
+                break;
+            }
+            case 6:
+                displayStatistics(artist, album);
+                exit = true;
+                break;
+            default:
+                exit = false;
+                break;
         }
     }while (!exit);
 }
@@ -625,44 +984,71 @@ bool addArtist(std::fstream& ArtFile, artistList& artist)
     system("cls");
     cout << "Do you want to add an artist? (Y/N) : ";
     cin >> addA;
-    cin.ignore(INT_MAX, '\n'); // Consume the newline
+    cin.ignore(INT_MAX, '\n');
+
     if (addA == 'y' || addA == 'Y')
     {
-        if (!ArtFile.is_open()) {
-            try {
-                openFile(ArtFile, artistFilePath);
-            } catch (const FileException& e) {
-                cout << e.what() << endl;
-                system("pause");
-                return false;
-            }
-        }
-
-        ArtFile.clear();
-        ArtFile.seekp(0, ios::end);
-
-        int pos;
         Artist art = getArtistInfo();
         std::string id = intToString(++lastArtistID, "art");
         art.setArtistId(id);
-        ArtistFile artFile{};
-        strncpy(artFile.artistIds, art.getArtistId().c_str(), 7);
-        artFile.artistIds[7] = '\0';
-        strncpy(artFile.names, art.getName().c_str(), 49);
-        artFile.names[49] = '\0';
-        artFile.genders = art.getGender();
-        strncpy(artFile.phones, art.getPhone().c_str(), 14);
-        artFile.phones[14] = '\0';
-        strncpy(artFile.emails, art.getEmail().c_str(), 49);
-        artFile.emails[49] = '\0';
-        pos = ArtFile.tellp();
-        ArtFile.write((char*)&artFile, sizeof(ArtistFile));
-        ArtFile.flush();
-        artist.artList.push_back({art.getArtistId(), art.getName(), pos});
-        sortArtist(artist);
+
+        auto state = std::make_shared<ArtistCommandState>();
+        state->artist = art;
+
+        CommandAction action;
+        action.description = "Add artist " + art.getName();
+        action.redo = [&, state]() -> bool {
+            if (state->pos < 0) {
+                if (!appendArtistRecord(ArtFile, state->artist, state->pos)) {
+                    return false;
+                }
+            } else {
+                if (!writeArtistAtPosition(ArtFile, state->pos, state->artist)) {
+                    return false;
+                }
+            }
+
+            int idx = findArtistIndexById(artist, state->artist.getArtistId());
+            if (idx == -1) {
+                artist.artList.push_back({state->artist.getArtistId(), state->artist.getName(), state->pos});
+            } else {
+                artist.artList[idx].artistId = state->artist.getArtistId();
+                artist.artList[idx].name = state->artist.getName();
+                artist.artList[idx].pos = state->pos;
+            }
+            sortArtist(artist);
+            Logger::getInstance()->log("Redo add artist: " + state->artist.getName());
+            return true;
+        };
+        action.undo = [&, state]() {
+            int idx = findArtistIndexById(artist, state->artist.getArtistId());
+            if (idx == -1) {
+                return;
+            }
+            if (ensureArtistStream(ArtFile)) {
+                ArtistFile blank = {"-1", "", 'N', "", ""};
+                ArtFile.clear();
+                ArtFile.seekp(state->pos, ios::beg);
+                ArtFile.write(reinterpret_cast<const char*>(&blank), sizeof(ArtistFile));
+                ArtFile.flush();
+            }
+            artist.artList.erase(artist.artList.begin() + idx);
+            Logger::getInstance()->log("Undo add artist: " + state->artist.getName());
+        };
+
+        if (!executeCommand(std::move(action))) {
+            --lastArtistID;
+            Logger::getInstance()->log("Failed to add artist via command");
+            return false;
+        }
         return true;
-    }else
+    }
+
+    if (addA == 'n' || addA == 'N')
         return false;
+
+    cout << "Wrong entry. Try again!" << endl;
+    return false;
 }
 
 //24
@@ -680,10 +1066,13 @@ Artist getArtistInfo()
 std::string getArtistName()
 {
     std::string name;
-    while(true)
+    while (true)
     {
         cout << "Enter Artist name: ";
-        getline(cin, name);
+        if (!getline(cin, name)) {
+            cin.clear();
+            continue;
+        }
         try {
             validateName(name);
             break;
@@ -929,40 +1318,62 @@ int selectArtist(std::fstream& ArtFile, const artistList& artist, indexSet& resu
 //37
 bool editArtistInfo(std::fstream& ArtFile, artistList& artist, int idx)
 {
-    int pos;
     displayOneArtist(ArtFile, artist, idx);
-    Artist art = getArtistInfo();
-    art.setArtistId(artist.artList[idx].artistId);
-    ArtistFile artFile;
-
-    if (!ArtFile.is_open()) {
-        try {
-            openFile(ArtFile, artistFilePath);
-        } catch (const FileException& e) {
-            cout << e.what() << endl;
-            system("pause");
-            Logger::getInstance()->log("Failed to open artist file for editing");
-            return false;
-        }
+    long pos = artist.artList[idx].pos;
+    Artist original;
+    if (!readArtistAtPosition(ArtFile, pos, original)) {
+        cout << "Failed to read artist data." << endl;
+        system("pause");
+        Logger::getInstance()->log("Failed to read artist for editing at position: " + std::to_string(pos));
+        return false;
     }
 
-    ArtFile.clear();
-    ArtFile.seekp(artist.artList[idx].pos, ios::beg);
-    strncpy(artFile.artistIds, art.getArtistId().c_str(), 7);
-    artFile.artistIds[7] = '\0';
-    strncpy(artFile.names, art.getName().c_str(), 49);
-    artFile.names[49] = '\0';
-    artFile.genders = art.getGender();
-    strncpy(artFile.phones, art.getPhone().c_str(), 14);
-    artFile.phones[14] = '\0';
-    strncpy(artFile.emails, art.getEmail().c_str(), 49);
-    artFile.emails[49] = '\0';
-    pos = ArtFile.tellp();
-    ArtFile.write((char*)&artFile, sizeof(ArtistFile));
-    ArtFile.flush();
-    artist.artList[idx].artistId = art.getArtistId();
-    artist.artList[idx].name = art.getName();
-    artist.artList[idx].pos = pos;
+    Artist updated = getArtistInfo();
+    updated.setArtistId(original.getArtistId());
+
+    auto state = std::make_shared<ArtistEditState>();
+    state->original = original;
+    state->updated = updated;
+    state->pos = pos;
+
+    CommandAction action;
+    action.description = "Edit artist " + original.getName();
+    action.redo = [&, state]() -> bool {
+        if (!writeArtistAtPosition(ArtFile, state->pos, state->updated)) {
+            Logger::getInstance()->log("Failed to apply artist edit during redo");
+            return false;
+        }
+        int targetIdx = findArtistIndexById(artist, state->updated.getArtistId());
+        if (targetIdx != -1) {
+            artist.artList[targetIdx].name = state->updated.getName();
+            artist.artList[targetIdx].pos = state->pos;
+        }
+        sortArtist(artist);
+        state->applied = true;
+        Logger::getInstance()->log("Redo edit artist: " + state->updated.getName());
+        return true;
+    };
+    action.undo = [&, state]() {
+        if (!writeArtistAtPosition(ArtFile, state->pos, state->original)) {
+            Logger::getInstance()->log("Failed to revert artist edit during undo");
+            return;
+        }
+        int targetIdx = findArtistIndexById(artist, state->original.getArtistId());
+        if (targetIdx != -1) {
+            artist.artList[targetIdx].name = state->original.getName();
+            artist.artList[targetIdx].pos = state->pos;
+        }
+        sortArtist(artist);
+        state->applied = false;
+        Logger::getInstance()->log("Undo edit artist: " + state->original.getName());
+    };
+
+    if (!executeCommand(std::move(action))) {
+        cout << "Failed to edit artist." << endl;
+        system("pause");
+        return false;
+    }
+
     cout << "\n\tEdited \n\n";
     system("pause");
     return true;
@@ -999,54 +1410,135 @@ void removeArtist(std::fstream& ArtFile, std::fstream& AlbFile, artistList& arti
 {
     Logger::getInstance()->log("Removing artist: " + artist.artList[idx].name + " with ID: " + artist.artList[idx].artistId);
     char remv;
-    int pos;
-    ArtistFile BLANK_ARTIST_FILE = {"-1", "", 'N', "", ""};
 
-    if (!ArtFile.is_open()) {
-        try {
-            openFile(ArtFile, artistFilePath);
-        } catch (const FileException& e) {
-            cout << e.what() << endl;
-            system("pause");
-            Logger::getInstance()->log("Failed to open artist file for removal");
-            return;
+    Artist original;
+    if (!readArtistAtPosition(ArtFile, artist.artList[idx].pos, original)) {
+        cout << "Failed to load artist details." << endl;
+        system("pause");
+        Logger::getInstance()->log("Failed to read artist during removal");
+        return;
+    }
+
+    if (!ensureAlbumStream(AlbFile)) {
+        Logger::getInstance()->log("Failed to ready album file for artist removal");
+        return;
+    }
+
+    ArtistRemovalState baseState;
+    baseState.artist = original;
+    baseState.pos = artist.artList[idx].pos;
+
+    for (size_t i = 0; i < album.albList.size(); ++i) {
+        if (album.albList[i].artistId == original.getArtistId()) {
+            Album snapshotAlbum;
+            if (readAlbumAtPosition(AlbFile, album.albList[i].pos, snapshotAlbum)) {
+                AlbumSnapshot snap;
+                snap.data = snapshotAlbum;
+                snap.pos = album.albList[i].pos;
+                baseState.associatedAlbums.push_back(snap);
+            }
         }
     }
 
-    if (!AlbFile.is_open()) {
-        try {
-            openFile(AlbFile, albumFilePath);
-        } catch (const FileException& e) {
-            cout << e.what() << endl;
-            system("pause");
-            Logger::getInstance()->log("Failed to open album file for artist removal");
-            return;
-        }
-    }
-
-    ArtFile.clear();
-    AlbFile.clear();
-
-    const std::string artistIdToRemove = artist.artList[idx].artistId;
     do{
         cout << "Are you sure you want to remove the selected artist? (Y/N) : ";
         cin >> remv;
         if (remv == 'y' || remv == 'Y')
         {
-            for (size_t i = 0; i < album.albList.size(); i++)
-                if (artistIdToRemove == album.albList[i].artistId)
-                    removeArtistAllAlbums(ArtFile, AlbFile, artist, album, delAlbArray, i);
-            ArtFile.seekp(artist.artList[idx].pos, ios::beg);
-            pos = ArtFile.tellp();
-            ArtFile.write((char*)&BLANK_ARTIST_FILE, sizeof(ArtistFile));
-            ArtFile.flush();
-            artist.artList[idx].artistId = BLANK_ARTIST_FILE.artistIds;
-            artist.artList[idx].name = BLANK_ARTIST_FILE.names;
-            artist.artList[idx].pos = pos;
-            delArtArray.indexes.push_back(idx);
+            auto state = std::make_shared<ArtistRemovalState>(baseState);
+
+            CommandAction action;
+            action.description = "Delete artist " + state->artist.getName();
+            action.redo = [&, state]() -> bool {
+                if (!ensureArtistStream(ArtFile) || !ensureAlbumStream(AlbFile)) {
+                    return false;
+                }
+
+                ArtistFile blankArtist = {"-1", "", 'N', "", ""};
+                AlbumFile blankAlbum = {"-1", "-1", "", "", "", ""};
+
+                for (auto& snapshot : state->associatedAlbums) {
+                    int albumIdx = findAlbumIndexById(album, snapshot.data.getAlbumId());
+                    if (albumIdx == -1) {
+                        continue;
+                    }
+                    AlbFile.clear();
+                    AlbFile.seekp(snapshot.pos, ios::beg);
+                    AlbFile.write(reinterpret_cast<const char*>(&blankAlbum), sizeof(AlbumFile));
+                    AlbFile.flush();
+                    album.albList[albumIdx].albumId = "-1";
+                    album.albList[albumIdx].artistId = "-1";
+                    album.albList[albumIdx].title = "";
+                    album.albList[albumIdx].pos = snapshot.pos;
+                    if (std::find(delAlbArray.indexes.begin(), delAlbArray.indexes.end(), albumIdx) == delAlbArray.indexes.end()) {
+                        delAlbArray.indexes.push_back(albumIdx);
+                    }
+                }
+
+                int artistIdx = findArtistIndexById(artist, state->artist.getArtistId());
+                state->artistIndex = artistIdx;
+                if (artistIdx != -1) {
+                    ArtFile.clear();
+                    ArtFile.seekp(state->pos, ios::beg);
+                    ArtFile.write(reinterpret_cast<const char*>(&blankArtist), sizeof(ArtistFile));
+                    ArtFile.flush();
+                    artist.artList[artistIdx].artistId = "-1";
+                    artist.artList[artistIdx].name = "";
+                    artist.artList[artistIdx].pos = state->pos;
+                    if (std::find(delArtArray.indexes.begin(), delArtArray.indexes.end(), artistIdx) == delArtArray.indexes.end()) {
+                        delArtArray.indexes.push_back(artistIdx);
+                    }
+                }
+
+                Logger::getInstance()->log("Redo artist removal: " + state->artist.getName());
+                return true;
+            };
+
+            action.undo = [&, state]() {
+                if (!writeArtistAtPosition(ArtFile, state->pos, state->artist)) {
+                    Logger::getInstance()->log("Failed to restore artist during undo");
+                    return;
+                }
+                int artistIdx = findArtistIndexById(artist, state->artist.getArtistId());
+                if (artistIdx != -1) {
+                    artist.artList[artistIdx].artistId = state->artist.getArtistId();
+                    artist.artList[artistIdx].name = state->artist.getName();
+                    artist.artList[artistIdx].pos = state->pos;
+                    auto it = std::find(delArtArray.indexes.begin(), delArtArray.indexes.end(), artistIdx);
+                    if (it != delArtArray.indexes.end()) {
+                        delArtArray.indexes.erase(it);
+                    }
+                }
+
+                for (auto& snapshot : state->associatedAlbums) {
+                    if (!writeAlbumAtPosition(AlbFile, snapshot.pos, snapshot.data)) {
+                        continue;
+                    }
+                    int albumIdx = findAlbumIndexById(album, snapshot.data.getAlbumId());
+                    if (albumIdx != -1) {
+                        album.albList[albumIdx].albumId = snapshot.data.getAlbumId();
+                        album.albList[albumIdx].artistId = snapshot.data.getArtistId();
+                        album.albList[albumIdx].title = snapshot.data.getTitle();
+                        album.albList[albumIdx].pos = snapshot.pos;
+                        auto itAlb = std::find(delAlbArray.indexes.begin(), delAlbArray.indexes.end(), albumIdx);
+                        if (itAlb != delAlbArray.indexes.end()) {
+                            delAlbArray.indexes.erase(itAlb);
+                        }
+                    }
+                }
+
+                Logger::getInstance()->log("Undo artist removal: " + state->artist.getName());
+            };
+
+            if (!executeCommand(std::move(action))) {
+                cout << "Failed to remove artist." << endl;
+                system("pause");
+                return;
+            }
+
             cout << "\n\t Artist removed successfully! \n" << endl;
             system("pause");
-            Logger::getInstance()->log("Artist removed successfully");
+            return;
         }else if(remv == 'n' || remv == 'N')
         {
             cout << "Artist not removed. \n" << endl;
@@ -1290,8 +1782,7 @@ bool addAlbum(std::fstream& ArtFile, std::fstream& AlbFile, const artistList& ar
         cin.ignore(INT_MAX, '\n'); // Consume the newline
         if (addA == 'y' || addA == 'Y')
         {
-            int pos, select;
-            AlbumFile albFile{};
+            int select;
             while(result.indexes.empty()){
                 searchArtist(ArtFile, artist, result);
                 if (result.indexes.empty()){
@@ -1300,30 +1791,74 @@ bool addAlbum(std::fstream& ArtFile, std::fstream& AlbFile, const artistList& ar
                 }
             }
             select = selectArtist(ArtFile, artist, result, "add an album");
-            albFile = getAlbumInfo();
+            AlbumFile albFile = getAlbumInfo();
             std::string idStr = intToString(++lastAlbumID, "alb");
             strncpy(albFile.albumIds, idStr.c_str(), 7);
             albFile.albumIds[7] = '\0';
             strncpy(albFile.artistIdRefs, artist.artList[select].artistId.c_str(), 7);
             albFile.artistIdRefs[7] = '\0';
-            if (!AlbFile.is_open()) {
-                try {
-                    openFile(AlbFile, albumFilePath);
-                } catch (const FileException& e) {
-                    cout << e.what() << endl;
-                    system("pause");
-                    return false;
+
+            Album newAlbum;
+            newAlbum.setAlbumId(std::string(albFile.albumIds));
+            newAlbum.setArtistId(std::string(albFile.artistIdRefs));
+            newAlbum.setTitle(std::string(albFile.titles));
+            newAlbum.setRecordFormat(std::string(albFile.recordFormats));
+            newAlbum.setDatePublished(std::string(albFile.datePublished));
+            newAlbum.setPath(std::string(albFile.paths));
+
+            auto state = std::make_shared<AlbumCommandState>();
+            state->album = newAlbum;
+
+            CommandAction action;
+            action.description = "Add album " + newAlbum.getTitle();
+            action.redo = [&, state]() -> bool {
+                if (state->pos < 0) {
+                    if (!appendAlbumRecord(AlbFile, state->album, state->pos)) {
+                        return false;
+                    }
+                } else {
+                    if (!writeAlbumAtPosition(AlbFile, state->pos, state->album)) {
+                        return false;
+                    }
                 }
+
+                int idx = findAlbumIndexById(album, state->album.getAlbumId());
+                if (idx == -1) {
+                    album.albList.push_back(albumIndex{state->album.getAlbumId(), state->album.getArtistId(), state->album.getTitle(), state->pos});
+                } else {
+                    album.albList[idx].albumId = state->album.getAlbumId();
+                    album.albList[idx].artistId = state->album.getArtistId();
+                    album.albList[idx].title = state->album.getTitle();
+                    album.albList[idx].pos = state->pos;
+                }
+                sortAlbum(album);
+                Logger::getInstance()->log("Redo add album: " + state->album.getTitle());
+                return true;
+            };
+            action.undo = [&, state]() {
+                int idx = findAlbumIndexById(album, state->album.getAlbumId());
+                if (idx == -1) {
+                    return;
+                }
+                if (ensureAlbumStream(AlbFile)) {
+                    AlbumFile blank = {"-1", "-1", "", "", "", ""};
+                    AlbFile.clear();
+                    AlbFile.seekp(state->pos, ios::beg);
+                    AlbFile.write(reinterpret_cast<const char*>(&blank), sizeof(AlbumFile));
+                    AlbFile.flush();
+                }
+                album.albList.erase(album.albList.begin() + idx);
+                Logger::getInstance()->log("Undo add album: " + state->album.getTitle());
+            };
+
+            if (!executeCommand(std::move(action))) {
+                --lastAlbumID;
+                Logger::getInstance()->log("Failed to add album via command");
+                return false;
             }
-            AlbFile.clear();
-            AlbFile.seekp(0, ios::end);
-            pos = AlbFile.tellp();
-            AlbFile.write((char*)&albFile, sizeof(albFile));
-            AlbFile.flush();
-            album.albList.push_back(albumIndex{std::string(albFile.albumIds), std::string(albFile.artistIdRefs), std::string(albFile.titles), pos});
-            sortAlbum(album);
+
             cout << endl;
-            cout << " Album ID: " << albFile.albumIds << endl;
+            cout << " Album ID: " << newAlbum.getAlbumId() << endl;
             cout << endl << endl;
             result.indexes.clear();
             return true;
@@ -1620,36 +2155,78 @@ int selectAlbum(std::fstream& AlbFile, const artistList& artist, const albumList
 //67
 bool editAlbumInfo(std::fstream& AlbFile, albumList& album, int idx)
 {
-    AlbumFile albFile;
-    bool edited = true;
-    int pos;
-    albFile = getAlbumInfo();
+    Album original;
+    if (!readAlbumAtPosition(AlbFile, album.albList[idx].pos, original)) {
+        cout << "Failed to load album details." << endl;
+        system("pause");
+        Logger::getInstance()->log("Failed to read album during edit");
+        return false;
+    }
+
+    AlbumFile albFile = getAlbumInfo();
     strncpy(albFile.albumIds, album.albList[idx].albumId.c_str(), 7);
     albFile.albumIds[7] = '\0';
     strncpy(albFile.artistIdRefs, album.albList[idx].artistId.c_str(), 7);
     albFile.artistIdRefs[7] = '\0';
-    if (!AlbFile.is_open()) {
-        try {
-            openFile(AlbFile, albumFilePath);
-        } catch (const FileException& e) {
-            cout << e.what() << endl;
-            system("pause");
-            Logger::getInstance()->log("Failed to open album file for editing");
+
+    Album updated;
+    updated.setAlbumId(std::string(albFile.albumIds));
+    updated.setArtistId(std::string(albFile.artistIdRefs));
+    updated.setTitle(std::string(albFile.titles));
+    updated.setRecordFormat(std::string(albFile.recordFormats));
+    updated.setDatePublished(std::string(albFile.datePublished));
+    updated.setPath(std::string(albFile.paths));
+
+    auto state = std::make_shared<AlbumEditState>();
+    state->original = original;
+    state->updated = updated;
+    state->pos = album.albList[idx].pos;
+
+    CommandAction action;
+    action.description = "Edit album " + original.getTitle();
+    action.redo = [&, state]() -> bool {
+        if (!writeAlbumAtPosition(AlbFile, state->pos, state->updated)) {
+            Logger::getInstance()->log("Failed to apply album edit during redo");
             return false;
         }
+        int albumIdx = findAlbumIndexById(album, state->updated.getAlbumId());
+        if (albumIdx != -1) {
+            album.albList[albumIdx].albumId = state->updated.getAlbumId();
+            album.albList[albumIdx].artistId = state->updated.getArtistId();
+            album.albList[albumIdx].title = state->updated.getTitle();
+            album.albList[albumIdx].pos = state->pos;
+        }
+        sortAlbum(album);
+        state->applied = true;
+        Logger::getInstance()->log("Redo edit album: " + state->updated.getTitle());
+        return true;
+    };
+    action.undo = [&, state]() {
+        if (!writeAlbumAtPosition(AlbFile, state->pos, state->original)) {
+            Logger::getInstance()->log("Failed to restore album during undo");
+            return;
+        }
+        int albumIdx = findAlbumIndexById(album, state->original.getAlbumId());
+        if (albumIdx != -1) {
+            album.albList[albumIdx].albumId = state->original.getAlbumId();
+            album.albList[albumIdx].artistId = state->original.getArtistId();
+            album.albList[albumIdx].title = state->original.getTitle();
+            album.albList[albumIdx].pos = state->pos;
+        }
+        sortAlbum(album);
+        state->applied = false;
+        Logger::getInstance()->log("Undo edit album: " + state->original.getTitle());
+    };
+
+    if (!executeCommand(std::move(action))) {
+        cout << "Failed to edit album." << endl;
+        system("pause");
+        return false;
     }
-    AlbFile.clear();
-    AlbFile.seekp(album.albList[idx].pos, ios::beg);
-    pos = AlbFile.tellp();
-    AlbFile.write((char*)&albFile, sizeof(albFile));
-    AlbFile.flush();
-    album.albList[idx].albumId = std::string(albFile.albumIds);
-    album.albList[idx].artistId = std::string(albFile.artistIdRefs);
-    album.albList[idx].title = std::string(albFile.titles);
-    album.albList[idx].pos = pos;
+
     cout << "\n\tEdited\n\n";
     system("pause");
-    return edited;
+    return true;
 }
 
 //68
@@ -1677,9 +2254,81 @@ void deleteAlbum(std::fstream& ArtFile, std::fstream& AlbFile, const artistList&
     cout << "Do you want to remove all the albums of this artist?(Y/N): ";
     cin >> answer;
     if( answer == 'y' || answer == 'Y' ){
-        for(size_t i = 0; i < album.albList.size(); i++){
-            removeArtistAllAlbums(ArtFile, AlbFile, artist, album, delAlbArray, i);
+        std::vector<AlbumSnapshot> snapshots;
+        for (const auto& albIdx : result.indexes) {
+            if (album.albList[albIdx].artistId != artist.artList[idx].artistId) {
+                continue;
+            }
+            Album snapshotAlbum;
+            if (readAlbumAtPosition(AlbFile, album.albList[albIdx].pos, snapshotAlbum)) {
+                AlbumSnapshot snap;
+                snap.data = snapshotAlbum;
+                snap.pos = album.albList[albIdx].pos;
+                snapshots.push_back(snap);
+            }
         }
+
+        if (snapshots.empty()) {
+            cout << "No albums found for this artist." << endl;
+            system("pause");
+            return;
+        }
+
+        auto state = std::make_shared<std::vector<AlbumSnapshot>>(std::move(snapshots));
+
+        CommandAction action;
+        action.description = "Delete all albums for artist " + artist.artList[idx].name;
+        action.redo = [&, state]() -> bool {
+            if (!ensureAlbumStream(AlbFile)) {
+                return false;
+            }
+            AlbumFile blank = {"-1", "-1", "", "", "", ""};
+            for (const auto& snapshot : *state) {
+                int albumIdx = findAlbumIndexById(album, snapshot.data.getAlbumId());
+                if (albumIdx == -1) {
+                    continue;
+                }
+                AlbFile.clear();
+                AlbFile.seekp(snapshot.pos, ios::beg);
+                AlbFile.write(reinterpret_cast<const char*>(&blank), sizeof(AlbumFile));
+                AlbFile.flush();
+                album.albList[albumIdx].albumId = "-1";
+                album.albList[albumIdx].artistId = "-1";
+                album.albList[albumIdx].title = "";
+                album.albList[albumIdx].pos = snapshot.pos;
+                if (std::find(delAlbArray.indexes.begin(), delAlbArray.indexes.end(), albumIdx) == delAlbArray.indexes.end()) {
+                    delAlbArray.indexes.push_back(albumIdx);
+                }
+            }
+            Logger::getInstance()->log("Redo delete all albums for artist");
+            return true;
+        };
+        action.undo = [&, state]() {
+            for (const auto& snapshot : *state) {
+                if (!writeAlbumAtPosition(AlbFile, snapshot.pos, snapshot.data)) {
+                    continue;
+                }
+                int albumIdx = findAlbumIndexById(album, snapshot.data.getAlbumId());
+                if (albumIdx != -1) {
+                    album.albList[albumIdx].albumId = snapshot.data.getAlbumId();
+                    album.albList[albumIdx].artistId = snapshot.data.getArtistId();
+                    album.albList[albumIdx].title = snapshot.data.getTitle();
+                    album.albList[albumIdx].pos = snapshot.pos;
+                    auto itAlb = std::find(delAlbArray.indexes.begin(), delAlbArray.indexes.end(), albumIdx);
+                    if (itAlb != delAlbArray.indexes.end()) {
+                        delAlbArray.indexes.erase(itAlb);
+                    }
+                }
+            }
+            Logger::getInstance()->log("Undo delete all albums for artist");
+        };
+
+        if (!executeCommand(std::move(action))) {
+            cout << "Failed to remove albums." << endl;
+            system("pause");
+            return;
+        }
+
         cout << "\n\t All Albums Successfully Removed!\n\n";
         system("pause");
     }
@@ -1691,7 +2340,68 @@ void deleteAlbum(std::fstream& ArtFile, std::fstream& AlbFile, const artistList&
         cout << "Are you sure?(Y/N): ";
         cin >> answer;
         if( answer == 'y' || answer == 'Y' ){
-            removeAlbum(AlbFile, album, delAlbArray, idx);
+            Album snapshotAlbum;
+            if (!readAlbumAtPosition(AlbFile, album.albList[idx].pos, snapshotAlbum)) {
+                cout << "Failed to load album." << endl;
+                system("pause");
+                return;
+            }
+            auto state = std::make_shared<AlbumRemovalState>();
+            state->album = snapshotAlbum;
+            state->pos = album.albList[idx].pos;
+            state->index = idx;
+
+            CommandAction action;
+            action.description = "Delete album " + snapshotAlbum.getTitle();
+            action.redo = [&, state]() -> bool {
+                if (!ensureAlbumStream(AlbFile)) {
+                    return false;
+                }
+                AlbumFile blank = {"-1", "-1", "", "", "", ""};
+                AlbFile.clear();
+                AlbFile.seekp(state->pos, ios::beg);
+                AlbFile.write(reinterpret_cast<const char*>(&blank), sizeof(AlbumFile));
+                AlbFile.flush();
+                int albumIdx = findAlbumIndexById(album, state->album.getAlbumId());
+                if (albumIdx != -1) {
+                    album.albList[albumIdx].albumId = "-1";
+                    album.albList[albumIdx].artistId = "-1";
+                    album.albList[albumIdx].title = "";
+                    album.albList[albumIdx].pos = state->pos;
+                    if (std::find(delAlbArray.indexes.begin(), delAlbArray.indexes.end(), albumIdx) == delAlbArray.indexes.end()) {
+                        delAlbArray.indexes.push_back(albumIdx);
+                    }
+                }
+                Logger::getInstance()->log("Redo delete album: " + state->album.getTitle());
+                return true;
+            };
+            action.undo = [&, state]() {
+                if (!writeAlbumAtPosition(AlbFile, state->pos, state->album)) {
+                    Logger::getInstance()->log("Failed to restore album during undo");
+                    return;
+                }
+                int albumIdx = findAlbumIndexById(album, state->album.getAlbumId());
+                if (albumIdx != -1) {
+                    album.albList[albumIdx].albumId = state->album.getAlbumId();
+                    album.albList[albumIdx].artistId = state->album.getArtistId();
+                    album.albList[albumIdx].title = state->album.getTitle();
+                    album.albList[albumIdx].pos = state->pos;
+                    auto itAlb = std::find(delAlbArray.indexes.begin(), delAlbArray.indexes.end(), albumIdx);
+                    if (itAlb != delAlbArray.indexes.end()) {
+                        delAlbArray.indexes.erase(itAlb);
+                    }
+                }
+                Logger::getInstance()->log("Undo delete album: " + state->album.getTitle());
+            };
+
+            if (!executeCommand(std::move(action))) {
+                cout << "Failed to remove album." << endl;
+                system("pause");
+                return;
+            }
+
+            cout << "\n\t Successfully Removed.\n\n";
+            system("pause");
         }
         else{
             cout << "\n\t Failed!\n\n";
@@ -2071,9 +2781,9 @@ bool AlbumManager::load(std::fstream& AlbFile) {
         AlbFile.read((char*)&albFile, sizeof(albFile));
         if (std::string(albFile.albumIds) != "-1"){
             albums.albList.push_back(albumIndex{std::string(albFile.albumIds), std::string(albFile.artistIdRefs), std::string(albFile.titles), pos});
-            std::string id = intToString(lastAlbumID, "alb");
-            if (std::string(albFile.albumIds) > id){
-                lastAlbumID = stringToInt(std::string(albFile.albumIds));
+            int currentId = stringToInt(std::string(albFile.albumIds));
+            if (currentId > lastAlbumID){
+                lastAlbumID = currentId;
             }
         }
         else{
@@ -2417,6 +3127,7 @@ bool FileArtistRepository::saveArtist(const Artist& artist) {
     strncpy(artFile.emails, artist.getEmail().c_str(), 49);
     artFile.emails[49] = '\0';
     
+    fileStream->clear();
     fileStream->seekp(0, std::ios::end);
     fileStream->write((char*)&artFile, sizeof(ArtistFile));
     fileStream->flush();
@@ -2447,8 +3158,10 @@ bool FileArtistRepository::updateArtist(const Artist& artist, int position) {
     strncpy(artFile.emails, artist.getEmail().c_str(), 49);
     artFile.emails[49] = '\0';
     
+    fileStream->clear();
     fileStream->seekp(position, std::ios::beg);
     fileStream->write((char*)&artFile, sizeof(ArtistFile));
+    fileStream->flush();
     
     Logger::getInstance()->log("Updated artist: " + artist.getName());
     return true;
@@ -2466,8 +3179,10 @@ bool FileArtistRepository::deleteArtist(int position) {
     }
     
     ArtistFile BLANK_ARTIST_FILE = {"-1", "", 'N', "", ""};
+    fileStream->clear();
     fileStream->seekp(position, std::ios::beg);
     fileStream->write((char*)&BLANK_ARTIST_FILE, sizeof(ArtistFile));
+    fileStream->flush();
     
     Logger::getInstance()->log("Deleted artist at position: " + std::to_string(position));
     return true;
@@ -2574,8 +3289,10 @@ bool FileAlbumRepository::saveAlbum(const Album& album) {
     albFile.datePublished[10] = '\0';
     strcpy(albFile.paths, album.getPath().c_str());
     
+    fileStream->clear();
     fileStream->seekp(0, std::ios::end);
     fileStream->write((char*)&albFile, sizeof(AlbumFile));
+    fileStream->flush();
     
     Logger::getInstance()->log("Saved album: " + album.getTitle());
     return true;
@@ -2604,8 +3321,10 @@ bool FileAlbumRepository::updateAlbum(const Album& album, int position) {
     albFile.datePublished[10] = '\0';
     strcpy(albFile.paths, album.getPath().c_str());
     
+    fileStream->clear();
     fileStream->seekp(position, std::ios::beg);
     fileStream->write((char*)&albFile, sizeof(AlbumFile));
+    fileStream->flush();
     
     Logger::getInstance()->log("Updated album: " + album.getTitle());
     return true;
@@ -2623,8 +3342,10 @@ bool FileAlbumRepository::deleteAlbum(int position) {
     }
     
     AlbumFile BLANK_ALBUM_FILE = {"-1", "-1", "", "", "", ""};
+    fileStream->clear();
     fileStream->seekp(position, std::ios::beg);
     fileStream->write((char*)&BLANK_ALBUM_FILE, sizeof(AlbumFile));
+    fileStream->flush();
     
     Logger::getInstance()->log("Deleted album at position: " + std::to_string(position));
     return true;
@@ -2966,18 +3687,22 @@ int MenuView::mainMenu() {
         cout<<"\n\n                       Enter  1 :  >> ARTIST MANAGER                           ";
         cout<<"\n\n                       Enter  2 :  >> ALBUM MANAGER                            ";
         cout<<"\n\n                       Enter  3 :  >> STATISTICS                              ";
-        cout<<"\n\n                       Enter  4 :  >> EXIT.                              \n\n ";
+        std::string undoDesc = getNextUndoDescription();
+        std::string redoDesc = getNextRedoDescription();
+        cout<<"\n\n                       Enter  4 :  >> UNDO " << (undoDesc.empty() ? "(none)" : "- " + undoDesc);
+        cout<<"\n\n                       Enter  5 :  >> REDO " << (redoDesc.empty() ? "(none)" : "- " + redoDesc);
+        cout<<"\n\n                       Enter  6 :  >> EXIT.                              \n\n ";
         cout<<"\n choice:    ";
         cin>>c;
         cin.clear();
         cin.ignore(INT_MAX,'\n');
-        if (c>4 || c<1){
+        if (c>6 || c<1){
             cout<<"Wrong Choice!";
             cout<<endl<<endl;
             system ("pause");
             system ("cls");
         }
-    }while(c>4 || c<1);
+    }while(c>6 || c<1);
     return c;
 }
 
