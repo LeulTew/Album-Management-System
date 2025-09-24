@@ -19,7 +19,7 @@ Transform the existing C++ console-based Album Management System into a modern, 
 - **2.1** ✅ Convert structs to proper classes with encapsulation
 - **2.2** ✅ Create separate classes: Artist, Album, ArtistManager, AlbumManager, FileHandler
 - **2.3** ✅ Implement proper separation of concerns (MVC-like pattern)
-- **2.4** Add an interface layer for data persistence
+- **2.4** ✅ Add an interface layer for data persistence (Repository pattern implemented with IArtistRepository and IAlbumRepository interfaces, FileArtistRepository and FileAlbumRepository concrete implementations, dependency injection in Manager classes)
 - **2.5** Implement the Command pattern for undo/redo functionality
 
 ### 3. Feature Enhancements
