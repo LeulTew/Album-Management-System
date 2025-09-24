@@ -13,6 +13,8 @@
 
 using namespace std;
 
+Logger* Logger::instance = nullptr;
+
 void welcome()  //2
 {
     system("COLOR 2F");
@@ -87,7 +89,7 @@ int charArrayToInt(char *arr)
 }
 
 //
-void openFile(std::fstream& fstr, const std::filesystem::path& path)
+void openFile(std::fstream& fstr, const std::string& path)
 {
     cout<<'\n';
     fstr.open(path, ios::in | ios::out | ios::binary);
@@ -99,7 +101,7 @@ void openFile(std::fstream& fstr, const std::filesystem::path& path)
         fstr.open(path, ios::in | ios::out | ios::binary);
         if(fstr) return;
     }
-    throw FileException("Failed to open file: " + path.string());
+    throw FileException("Failed to open file: " + path);
 }
 
 std::string intToString(int last, const std::string& prefix) {
@@ -241,15 +243,17 @@ void mainH(fstream & ArtFile, fstream & AlbFile, artistList & artist, albumList 
     bool exit=false;
     do
     {
-        int choice=mainMenu();
+        int choice=MenuView::mainMenu();
         if (choice ==1)
             exit=artistManager(ArtFile,AlbFile,artist,album,result,delArtArray,delAlbArray);
         if (choice ==2)
             exit=albumManager(ArtFile,AlbFile,artist,album,result,delArtArray,delAlbArray);
         if (choice ==3)
             displayStatistics(artist, album);
-        if (choice ==4)
+        if (choice ==4) {
+            displayStatistics(artist, album);
             exit=true;
+        }
     }while (!exit);
 }
 
@@ -361,7 +365,7 @@ bool artistManager(fstream & ArtFile, fstream & AlbFile, artistList &artist, alb
     do
     {
         exit=false;
-        int choice=artistMenu();
+        int choice=MenuView::artistMenu();
         if (choice ==1)
             exit=artistViewer(ArtFile,artist,result);
         if (choice ==2)
@@ -374,8 +378,10 @@ bool artistManager(fstream & ArtFile, fstream & AlbFile, artistList &artist, alb
         }
         if (choice ==4)
             return false;
-        if (choice ==5)
+        if (choice ==5) {
+            displayStatistics(artist, album);
             return true;
+        }
     }while(exit);
     return true;
 }
@@ -414,7 +420,7 @@ bool artistViewer(std::fstream& ArtFile, const artistList& artist, indexSet& res
     bool exit=false;
     do
     {
-        int choice=viewArtistMenu();
+        int choice=MenuView::viewArtistMenu();
         if (choice ==1)
             displayAllArtist(ArtFile,artist);
         if (choice ==2)
@@ -454,29 +460,7 @@ int viewArtistMenu()
 //15
 void displayAllArtist(std::fstream& ArtFile, const artistList& artist)
 {
-    system("cls");
-    ArtistFile artFile;
-    int idx = 0;
-
-    cout << "   " << left << setw(4) << "No" << setw(25) << "Name" << setw(12) << "Artist ID" << setw(8) << "Gender" << setw(15) << "Phone" << setw(30) << "Email" << endl;
-    cout << "   " << string(90, '-') << endl;
-    for(size_t i = 0; i < artist.artList.size(); ++i){
-        ArtFile.seekg(artist.artList[i].pos, ios::beg);
-        ArtFile.read((char*)&artFile, sizeof(artFile));
-        cout << "   " << setw(4) << idx+1
-             << setw(25) << std::string(artFile.names).c_str()
-             << setw(12) << std::string(artFile.artistIds).c_str()
-             << setw(8) << artFile.genders
-             << setw(15) << std::string(artFile.phones).c_str()
-             << setw(30) << std::string(artFile.emails).c_str() << endl;
-        ++idx;
-    }
-    if(idx == 0){
-        system("cls");
-        cout << "\nThere is nothing to display.\n" ;
-    }
-    cout << endl << endl;
-    system("pause");
+    ArtistView::displayAll(ArtFile, artist);
 }
 
 //16
@@ -553,24 +537,7 @@ bool searchArtistByName(const artistList& artist, indexSet& result, const std::s
 //20
 void displaySearchResult(std::fstream& ArtFile, const artistList& artist, const indexSet& result)
 {
-    ArtistFile artFile;
-    if(result.indexes.empty()){
-        printError(4);
-        return;
-    }else{
-        cout << " \tArtist Search Results:" << endl;
-        cout << "\t" << result.indexes.size() << " artist found." << endl << endl;
-        cout << "\t" << "Ids\t" << setw(10) << "\tNames\t" << setw(29) << "Gender \t" << "Phone" << setw(15) << "\tEmail" << endl;
-        for (size_t i = 0; i < result.indexes.size(); i++)
-        {
-            size_t idx = result.indexes[i];
-            ArtFile.seekg(artist.artList[idx].pos, ios::beg);
-            ArtFile.read((char*)&artFile, sizeof(ArtistFile));
-            cout << i+1 << '\t' << std::string(artFile.artistIds) << setw(8) << '\t' << std::string(artFile.names) << setw(30 - std::string(artFile.names).length()) << artFile.genders << '\t' << setw(18) << std::string(artFile.phones) << '\t' << std::string(artFile.emails) << endl;
-        }
-
-    }
-    // result.indexes.clear(); not needed since const
+    ArtistView::displaySearchResult(ArtFile, artist, result);
 }
 
 //21
@@ -579,7 +546,7 @@ bool artistEditor(fstream & ArtFile, fstream & AlbFile, artistList &artist, albu
     bool exit=false, success=false;
     do
     {
-        int choice=editArtistMenu();
+        int choice=MenuView::editArtistMenu();
         if (choice ==1){
             success= addArtist(ArtFile,artist);
             if(success)
@@ -903,17 +870,7 @@ bool editArtistInfo(std::fstream& ArtFile, artistList& artist, int idx)
 //38
 void displayOneArtist(std::fstream& ArtFile, const artistList& artist, int idx)
 {
-    ArtistFile artFile;
-    ArtFile.seekg(artist.artList[idx].pos, ios::beg);
-    ArtFile.read((char*)&artFile, sizeof(artFile));
-    cout << endl << endl;
-    cout << "\tId:     " << std::string(artFile.artistIds) << endl;
-    cout << "\tName:   " << std::string(artFile.names) << endl;
-    cout << "\tGender: " << artFile.genders << endl;
-    cout << "\tPhone:  " << std::string(artFile.phones) << endl;
-    cout << "\tEmail:  " << std::string(artFile.emails) << endl;
-    cout << endl << endl;
-    system("pause");
+    ArtistView::displayOne(ArtFile, artist, idx);
 }
 
 //39
@@ -933,6 +890,7 @@ void deleteArtist(std::fstream& ArtFile, std::fstream& AlbFile, artistList& arti
 //40
 void removeArtist(std::fstream& ArtFile, std::fstream& AlbFile, artistList& artist, albumList& album, indexSet& delArtArray, indexSet& delAlbArray, int idx)
 {
+    Logger::getInstance()->log("Removing artist: " + artist.artList[idx].name + " with ID: " + artist.artList[idx].artistId);
     char remv;
     int pos;
     ArtistFile BLANK_ARTIST_FILE = {"-1", "", 'N', "", ""};
@@ -953,10 +911,12 @@ void removeArtist(std::fstream& ArtFile, std::fstream& AlbFile, artistList& arti
             delArtArray.indexes.push_back(idx);
             cout << "\n\t Artist removed successfully! \n" << endl;
             system("pause");
+            Logger::getInstance()->log("Artist removed successfully");
         }else if(remv == 'n' || remv == 'N')
         {
             cout << "Artist not removed. \n" << endl;
             system("pause");
+            Logger::getInstance()->log("Artist removal cancelled by user");
             return;
         }else{cout << "Wrong entry. Try again!" << endl;}
     }while(remv != 'y' && remv != 'Y' && remv != 'n' && remv != 'N');
@@ -984,7 +944,7 @@ bool albumManager(fstream & ArtFile, fstream & AlbFile, artistList &artist, albu
     do
     {
         exit=false;
-        int choice=albumMenu();
+        int choice=MenuView::albumMenu();
         if (choice ==1)
             exit=albumViewer(AlbFile,album,result);
         if (choice ==2)
@@ -997,8 +957,10 @@ bool albumManager(fstream & ArtFile, fstream & AlbFile, artistList &artist, albu
         }
         if (choice ==4)
             return false;
-        if (choice ==5)
+        if (choice ==5) {
+            displayStatistics(artist, album);
             return true;
+        }
     }while(exit);
     return true;
 }
@@ -1037,7 +999,7 @@ bool albumViewer(std::fstream& AlbFile, const albumList& album, indexSet& result
     bool exit=false;
     do
     {
-        int choice=viewAlbumMenu();
+        int choice=MenuView::viewAlbumMenu();
         if (choice ==1)
             displayAllAlbums(AlbFile,album);
         if ( choice == 2 ){
@@ -1093,24 +1055,7 @@ int viewAlbumMenu()
 //46
 void displayAllAlbums(std::fstream& AlbFile, const albumList& album)
 {
-    system("cls");
-    AlbumFile albFile;
-    int idx = 0;
-    cout << endl << "\tNo.\t" << "Titles\t" << setw(33) << "IdsRef" << setw(11) << "\tAlbumIds";
-    cout << "\tRecordFormat \t" << "DatePublisheds" << setw(5) << "\tPaths" << endl;
-    for (size_t i = 0; i < album.albList.size(); i++){
-        if(album.albList[i].albumId != "-1"){
-            AlbFile.seekg(album.albList[i].pos, ios::beg);
-            AlbFile.read((char*)&albFile, sizeof(albFile));
-            std::string title(albFile.titles);
-            cout << '\t' << ++idx << '\t' << title << ' ' << setw(40 - title.length()) << album.albList[i].artistId;
-            cout << '\t' << album.albList[i].albumId << setw(3) << '\t' << '.' << std::string(albFile.recordFormats) << setw(10) << '\t' << std::string(albFile.datePublished) << setw(5) << '\t' << std::string(albFile.paths) << endl;
-        }
-    }
-    cout << endl << endl;
-    if(idx == 0)
-        cout << "\tNothing to display. Please add an album." << endl;
-    system("pause");
+    AlbumView::displayAll(AlbFile, album);
 }
 
 //47
@@ -1130,20 +1075,7 @@ bool searchAlbumByArtistId(std::fstream& AlbFile, const albumList& album, indexS
 //48
 void displayAlbumSearchResult(std::fstream& AlbFile, const albumList& album, const indexSet& result)
 {
-    cout << endl << " \tAlbum Search Results:" << endl;
-    AlbumFile albFile;
-    cout << "\t" << result.indexes.size() << " Albums found." << endl << endl;
-    cout << endl << "\tNo.\t" << "Titles" << setw(33) << "IdsRef" << setw(11) << "\tAlbumIds";
-    cout << "\tRecordFormat \t" << "DatePublisheds" << setw(5) << "\tPaths" << endl;
-    for (size_t i = 0; i < result.indexes.size(); i++){
-        size_t idx = result.indexes[i];
-        AlbFile.seekg(album.albList[idx].pos, ios::beg);
-        AlbFile.read((char*)&albFile, sizeof(albFile));
-        std::string title(albFile.titles);
-        cout << '\t' << idx << '\t' << title << setw(40 - title.length()) << album.albList[idx].artistId;
-        cout << '\t' << album.albList[idx].albumId << setw(3) << '\t' << '.' << std::string(albFile.recordFormats) << setw(10) << '\t' << std::string(albFile.datePublished) << setw(5) << '\t' << std::string(albFile.paths) << endl;
-    }
-    cout << endl << endl;
+    AlbumView::displaySearchResult(AlbFile, album, result);
 }
 
 //49
@@ -1152,7 +1084,7 @@ bool albumEditor(std::fstream& ArtFile, std::fstream& AlbFile, const artistList&
     bool exit=false, success=false;
     do
     {
-        int choice=editAlbumMenu();
+        int choice=MenuView::editAlbumMenu();
         if (choice ==1){
             success=addAlbum(ArtFile,AlbFile,artist,album,result);
             if(success)
@@ -1553,17 +1485,7 @@ bool editAlbumInfo(std::fstream& AlbFile, albumList& album, int idx)
 //68
 void displayOneAlbum(std::fstream& AlbFile, const albumList& album, int idx)
 {
-    AlbumFile albFile;
-    AlbFile.seekg(album.albList[idx].pos, ios::beg);
-    AlbFile.read((char*)&albFile, sizeof(albFile));
-    cout << endl << endl;
-    cout << "\t\tTitle:          " << std::string(albFile.titles) << endl;
-    cout << "\t\tAlbum ID:       " << std::string(albFile.albumIds) << endl;
-    cout << "\t\tRecord Format:  ." << std::string(albFile.recordFormats) << endl;
-    cout << "\t\tDate Published: " << std::string(albFile.datePublished) << endl;
-    cout << "\t\tPath:           " << std::string(albFile.paths) << endl;
-    cout << endl << endl;
-    system("pause");
+    AlbumView::displayOne(AlbFile, album, idx);
 }
 
 //69
@@ -1728,6 +1650,7 @@ void farewell() {
 
 // ArtistManager implementations
 bool ArtistManager::load(std::fstream& ArtFile) {
+    Logger::getInstance()->log("Loading artists from file");
     ArtistFile artFile;
     int nRec, pos;
     try {
@@ -1735,6 +1658,7 @@ bool ArtistManager::load(std::fstream& ArtFile) {
     } catch(const FileException& e) {
         printError(1);
         system("pause");
+        Logger::getInstance()->log("Failed to load artists: " + std::string(e.what()));
         return false;
     }
     ArtFile.seekg(0, ios::end);
@@ -1757,6 +1681,7 @@ bool ArtistManager::load(std::fstream& ArtFile) {
         pos = ArtFile.tellg();
     }
     sortArtists();
+    Logger::getInstance()->log("Loaded " + std::to_string(artists.artList.size()) + " artists");
     return true;
 }
 
@@ -1767,6 +1692,7 @@ void ArtistManager::sortArtists() {
 }
 
 bool ArtistManager::add(std::fstream& ArtFile) {
+    Logger::getInstance()->log("Adding new artist");
     char addA;
     system("cls");
     cout << "Do you want to add an artist? (Y/N) : ";
@@ -1792,35 +1718,14 @@ bool ArtistManager::add(std::fstream& ArtFile) {
         ArtFile.write((char*)&artFile, sizeof(ArtistFile));
         artists.artList.push_back({art.getArtistId(), art.getName(), pos});
         sortArtists();
+        Logger::getInstance()->log("Added artist: " + art.getName() + " with ID: " + art.getArtistId());
         return true;
     }else
         return false;
 }
 
 void ArtistManager::displayAll(std::fstream& ArtFile) const {
-    system("cls");
-    ArtistFile artFile;
-    int idx = 0;
-
-    cout << "   " << left << setw(4) << "No" << setw(25) << "Name" << setw(12) << "Artist ID" << setw(8) << "Gender" << setw(15) << "Phone" << setw(30) << "Email" << endl;
-    cout << "   " << string(90, '-') << endl;
-    for(size_t i = 0; i < artists.artList.size(); ++i){
-        ArtFile.seekg(artists.artList[i].pos, ios::beg);
-        ArtFile.read((char*)&artFile, sizeof(artFile));
-        cout << "   " << setw(4) << idx+1
-             << setw(25) << std::string(artFile.names).c_str()
-             << setw(12) << std::string(artFile.artistIds).c_str()
-             << setw(8) << artFile.genders
-             << setw(15) << std::string(artFile.phones).c_str()
-             << setw(30) << std::string(artFile.emails).c_str() << endl;
-        ++idx;
-    }
-    if(idx == 0){
-        system("cls");
-        cout << "\nThere is nothing to display.\n" ;
-    }
-    cout << endl << endl;
-    system("pause");
+    ArtistView::displayAll(ArtFile, artists);
 }
 
 bool ArtistManager::search(std::fstream& ArtFile, indexSet& result) const {
@@ -1860,23 +1765,7 @@ bool ArtistManager::search(std::fstream& ArtFile, indexSet& result) const {
 }
 
 void ArtistManager::displaySearchResult(std::fstream& ArtFile, const indexSet& result) const {
-    ArtistFile artFile;
-    if(result.indexes.empty()){
-        printError(4);
-        return;
-    }else{
-        cout << " \tArtist Search Results:" << endl;
-        cout << "\t" << result.indexes.size() << " artist found." << endl << endl;
-        cout << "\t" << "Ids\t" << setw(10) << "\tNames\t" << setw(29) << "Gender \t" << "Phone" << setw(15) << "\tEmail" << endl;
-        for (size_t i = 0; i < result.indexes.size(); i++)
-        {
-            size_t idx = result.indexes[i];
-            ArtFile.seekg(artists.artList[idx].pos, ios::beg);
-            ArtFile.read((char*)&artFile, sizeof(ArtistFile));
-            cout << i+1 << '\t' << std::string(artFile.artistIds) << setw(8) << '\t' << std::string(artFile.names) << setw(30 - std::string(artFile.names).length()) << artFile.genders << '\t' << setw(18) << std::string(artFile.phones) << '\t' << std::string(artFile.emails) << endl;
-        }
-
-    }
+    ArtistView::displaySearchResult(ArtFile, artists, result);
 }
 
 int ArtistManager::selectArtist(std::fstream& ArtFile, indexSet& result, const std::string& forWhat) const {
@@ -1897,20 +1786,11 @@ int ArtistManager::selectArtist(std::fstream& ArtFile, indexSet& result, const s
 }
 
 void ArtistManager::displayOne(std::fstream& ArtFile, int idx) const {
-    ArtistFile artFile;
-    ArtFile.seekg(artists.artList[idx].pos, ios::beg);
-    ArtFile.read((char*)&artFile, sizeof(artFile));
-    cout << endl << endl;
-    cout << "\tId:     " << std::string(artFile.artistIds) << endl;
-    cout << "\tName:   " << std::string(artFile.names) << endl;
-    cout << "\tGender: " << artFile.genders << endl;
-    cout << "\tPhone:  " << std::string(artFile.phones) << endl;
-    cout << "\tEmail:  " << std::string(artFile.emails) << endl;
-    cout << endl << endl;
-    system("pause");
+    ArtistView::displayOne(ArtFile, artists, idx);
 }
 
 void ArtistManager::edit(std::fstream& ArtFile, indexSet& result) {
+    Logger::getInstance()->log("Editing artist");
     system("cls");
     cout << setw(30) << "Edit Artist " << endl;
     do{
@@ -1918,12 +1798,14 @@ void ArtistManager::edit(std::fstream& ArtFile, indexSet& result) {
         if (result.indexes.empty()){
             printError(4);
             system("pause");
+            Logger::getInstance()->log("No artists found for editing");
             return;
         }
     }while(result.indexes.empty());
     size_t idx = selectArtist(ArtFile, result, "edit");
     editArtistInfo(ArtFile, artists, idx);
     sortArtists();
+    Logger::getInstance()->log("Artist edited successfully");
 }
 
 void ArtistManager::remove(std::fstream& ArtFile, std::fstream& AlbFile, AlbumManager& albumManager, indexSet& result) {
@@ -1941,6 +1823,7 @@ void ArtistManager::remove(std::fstream& ArtFile, std::fstream& AlbFile, AlbumMa
 
 // AlbumManager implementations
 bool AlbumManager::load(std::fstream& AlbFile) {
+    Logger::getInstance()->log("Loading albums from file");
     AlbumFile albFile;
     int nRec, pos;
 
@@ -1949,6 +1832,7 @@ bool AlbumManager::load(std::fstream& AlbFile) {
     } catch(const FileException& e) {
         printError(2);
         system("pause");
+        Logger::getInstance()->log("Failed to load albums: " + std::string(e.what()));
         return false;
     }
     AlbFile.seekg(0, ios::end);
@@ -1971,6 +1855,7 @@ bool AlbumManager::load(std::fstream& AlbFile) {
         pos = AlbFile.tellg();
     }
     sortAlbums();
+    Logger::getInstance()->log("Successfully loaded " + std::to_string(albums.albList.size()) + " albums");
     return true;
 }
 
@@ -1981,6 +1866,7 @@ void AlbumManager::sortAlbums() {
 }
 
 bool AlbumManager::add(std::fstream& ArtFile, std::fstream& AlbFile, const ArtistManager& artistManager, indexSet& result) {
+    Logger::getInstance()->log("Adding new album");
     char addA;
     do{
         system("cls");
@@ -2014,6 +1900,7 @@ bool AlbumManager::add(std::fstream& ArtFile, std::fstream& AlbFile, const Artis
             cout << " Album ID: " << albFile.albumIds << endl;
             cout << endl << endl;
             result.indexes.clear();
+            Logger::getInstance()->log("Added album: " + std::string(albFile.titles) + " with ID: " + std::string(albFile.albumIds));
             return true;
         }else if (addA == 'n' || addA == 'N')
             return false;
@@ -2025,24 +1912,7 @@ bool AlbumManager::add(std::fstream& ArtFile, std::fstream& AlbFile, const Artis
 }
 
 void AlbumManager::displayAll(std::fstream& AlbFile) const {
-    system("cls");
-    AlbumFile albFile;
-    int idx = 0;
-    cout << endl << "\tNo.\t" << "Titles\t" << setw(33) << "IdsRef" << setw(11) << "\tAlbumIds";
-    cout << "\tRecordFormat \t" << "DatePublisheds" << setw(5) << "\tPaths" << endl;
-    for (size_t i = 0; i < albums.albList.size(); i++){
-        if(albums.albList[i].albumId != "-1"){
-            AlbFile.seekg(albums.albList[i].pos, ios::beg);
-            AlbFile.read((char*)&albFile, sizeof(albFile));
-            std::string title(albFile.titles);
-            cout << '\t' << ++idx << '\t' << title << ' ' << setw(40 - title.length()) << albums.albList[i].artistId;
-            cout << '\t' << albums.albList[i].albumId << setw(3) << '\t' << '.' << std::string(albFile.recordFormats) << setw(10) << '\t' << std::string(albFile.datePublished) << setw(5) << '\t' << std::string(albFile.paths) << endl;
-        }
-    }
-    cout << endl << endl;
-    if(idx == 0)
-        cout << "\tNothing to display. Please add an album." << endl;
-    system("pause");
+    AlbumView::displayAll(AlbFile, albums);
 }
 
 bool AlbumManager::searchByArtistId(std::fstream& AlbFile, indexSet& result, const std::string& targetId) {
@@ -2058,34 +1928,11 @@ bool AlbumManager::searchByArtistId(std::fstream& AlbFile, indexSet& result, con
 }
 
 void AlbumManager::displaySearchResult(std::fstream& AlbFile, const indexSet& result) const {
-    cout << endl << " \tAlbum Search Results:" << endl;
-    AlbumFile albFile;
-    cout << "\t" << result.indexes.size() << " Albums found." << endl << endl;
-    cout << endl << "\tNo.\t" << "Titles" << setw(33) << "IdsRef" << setw(11) << "\tAlbumIds";
-    cout << "\tRecordFormat \t" << "DatePublisheds" << setw(5) << "\tPaths" << endl;
-    for (size_t i = 0; i < result.indexes.size(); i++){
-        size_t idx = result.indexes[i];
-        AlbFile.seekg(albums.albList[idx].pos, ios::beg);
-        AlbFile.read((char*)&albFile, sizeof(albFile));
-        std::string title(albFile.titles);
-        cout << '\t' << idx << '\t' << title << setw(40 - title.length()) << albums.albList[idx].artistId;
-        cout << '\t' << albums.albList[idx].albumId << setw(3) << '\t' << '.' << std::string(albFile.recordFormats) << setw(10) << '\t' << std::string(albFile.datePublished) << setw(5) << '\t' << std::string(albFile.paths) << endl;
-    }
-    cout << endl << endl;
+    AlbumView::displaySearchResult(AlbFile, albums, result);
 }
 
 void AlbumManager::displayOne(std::fstream& AlbFile, int idx) const {
-    AlbumFile albFile;
-    AlbFile.seekg(albums.albList[idx].pos, ios::beg);
-    AlbFile.read((char*)&albFile, sizeof(albFile));
-    cout << endl << endl;
-    cout << "\t\tTitle:          " << std::string(albFile.titles) << endl;
-    cout << "\t\tAlbum ID:       " << std::string(albFile.albumIds) << endl;
-    cout << "\t\tRecord Format:  ." << std::string(albFile.recordFormats) << endl;
-    cout << "\t\tDate Published: " << std::string(albFile.datePublished) << endl;
-    cout << "\t\tPath:           " << std::string(albFile.paths) << endl;
-    cout << endl << endl;
-    system("pause");
+    AlbumView::displayOne(AlbFile, albums, idx);
 }
 
 int AlbumManager::selectAlbum(std::fstream& AlbFile, const ArtistManager& artistManager, indexSet& result, int idx, const std::string& forWhat) {
@@ -2137,6 +1984,7 @@ int AlbumManager::selectAlbum(std::fstream& AlbFile, const ArtistManager& artist
 }
 
 void AlbumManager::edit(std::fstream& ArtFile, std::fstream& AlbFile, const ArtistManager& artistManager, indexSet& result) {
+    Logger::getInstance()->log("Editing album");
     system("cls");
     cout << setw(30) << "Edit Album " << endl;
     int select;
@@ -2146,14 +1994,18 @@ void AlbumManager::edit(std::fstream& ArtFile, std::fstream& AlbFile, const Arti
         select = artistManager.selectArtist(ArtFile, result, "edit");
    }
     select = selectAlbum(AlbFile, artistManager, result, select, "edit");
-    if(select == -1 )
+    if(select == -1 ) {
+        Logger::getInstance()->log("Album edit cancelled - no album selected");
         return;
+    }
     while (finish == false && !result.indexes.empty())
         finish = editAlbumInfo(AlbFile, albums, select);
     sortAlbums();
+    Logger::getInstance()->log("Album edited successfully");
 }
 
 void AlbumManager::remove(std::fstream& AlbFile, indexSet& result, int idx) {
+    Logger::getInstance()->log("Removing album: " + albums.albList[idx].title + " with ID: " + albums.albList[idx].albumId);
     int pos;
     AlbumFile BLANK_ALBUM_FILE = {"-1", "-1", "", "", "", ""};
     AlbFile.seekp(albums.albList[idx].pos, ios::beg);
@@ -2166,6 +2018,7 @@ void AlbumManager::remove(std::fstream& AlbFile, indexSet& result, int idx) {
     deletedAlbums.indexes.push_back(idx);
     cout << "\n\t Successfully Removed.\n\n";
     system("pause");
+    Logger::getInstance()->log("Album removed successfully");
 }
 
 bool AlbumManager::searchByTitle(std::fstream& AlbFile, indexSet& result, const std::string& title) {
@@ -2203,7 +2056,7 @@ bool AlbumManager::searchByDateRange(std::fstream& AlbFile, indexSet& result, un
 }
 
 // FileHandler implementations
-void FileHandler::openFile(std::fstream& fstr, const std::filesystem::path& path) {
+void FileHandler::openFile(std::fstream& fstr, const std::string& path) {
     cout<<'\n';
     fstr.open(path, ios::in | ios::out | ios::binary);
     if(fstr) return;
@@ -2214,5 +2067,296 @@ void FileHandler::openFile(std::fstream& fstr, const std::filesystem::path& path
         fstr.open(path, ios::in | ios::out | ios::binary);
         if(fstr) return;
     }
-    throw FileException("Failed to open file: " + path.string());
+    throw FileException("Failed to open file: " + path);
+}
+
+// ArtistView implementations
+void ArtistView::displayAll(std::fstream& ArtFile, const artistList& artists) {
+    system("cls");
+    ArtistFile artFile;
+    int idx = 0;
+
+    cout << "   " << left << setw(4) << "No" << setw(25) << "Name" << setw(12) << "Artist ID" << setw(8) << "Gender" << setw(15) << "Phone" << setw(30) << "Email" << endl;
+    cout << "   " << string(90, '-') << endl;
+    for(size_t i = 0; i < artists.artList.size(); ++i){
+        ArtFile.seekg(artists.artList[i].pos, ios::beg);
+        ArtFile.read((char*)&artFile, sizeof(artFile));
+        cout << "   " << setw(4) << idx+1
+             << setw(25) << std::string(artFile.names).c_str()
+             << setw(12) << std::string(artFile.artistIds).c_str()
+             << setw(8) << artFile.genders
+             << setw(15) << std::string(artFile.phones).c_str()
+             << setw(30) << std::string(artFile.emails).c_str() << endl;
+        ++idx;
+    }
+    if(idx == 0){
+        system("cls");
+        cout << "\nThere is nothing to display.\n" ;
+    }
+    cout << endl << endl;
+    system("pause");
+}
+
+void ArtistView::displaySearchResult(std::fstream& ArtFile, const artistList& artists, const indexSet& result) {
+    ArtistFile artFile;
+    if(result.indexes.empty()){
+        printError(4);
+        return;
+    }else{
+        cout << " \tArtist Search Results:" << endl;
+        cout << "\t" << result.indexes.size() << " artist found." << endl << endl;
+        cout << "\t" << "Ids\t" << setw(10) << "\tNames\t" << setw(29) << "Gender \t" << "Phone" << setw(15) << "\tEmail" << endl;
+        for (size_t i = 0; i < result.indexes.size(); i++)
+        {
+            size_t idx = result.indexes[i];
+            ArtFile.seekg(artists.artList[idx].pos, ios::beg);
+            ArtFile.read((char*)&artFile, sizeof(ArtistFile));
+            cout << i+1 << '\t' << std::string(artFile.artistIds) << setw(8) << '\t' << std::string(artFile.names) << setw(30 - std::string(artFile.names).length()) << artFile.genders << '\t' << setw(18) << std::string(artFile.phones) << '\t' << std::string(artFile.emails) << endl;
+        }
+
+    }
+}
+
+void ArtistView::displayOne(std::fstream& ArtFile, const artistList& artists, int idx) {
+    ArtistFile artFile;
+    ArtFile.seekg(artists.artList[idx].pos, ios::beg);
+    ArtFile.read((char*)&artFile, sizeof(artFile));
+    cout << endl << endl;
+    cout << "\tId:     " << std::string(artFile.artistIds) << endl;
+    cout << "\tName:   " << std::string(artFile.names) << endl;
+    cout << "\tGender: " << artFile.genders << endl;
+    cout << "\tPhone:  " << std::string(artFile.phones) << endl;
+    cout << "\tEmail:  " << std::string(artFile.emails) << endl;
+    cout << endl << endl;
+    system("pause");
+}
+
+// AlbumView implementations
+void AlbumView::displayAll(std::fstream& AlbFile, const albumList& albums) {
+    system("cls");
+    AlbumFile albFile;
+    int idx = 0;
+    cout << endl << "\tNo.\t" << "Titles\t" << setw(33) << "IdsRef" << setw(11) << "\tAlbumIds";
+    cout << "\tRecordFormat \t" << "DatePublisheds" << setw(5) << "\tPaths" << endl;
+    for (size_t i = 0; i < albums.albList.size(); i++){
+        if(albums.albList[i].albumId != "-1"){
+            AlbFile.seekg(albums.albList[i].pos, ios::beg);
+            AlbFile.read((char*)&albFile, sizeof(albFile));
+            std::string title(albFile.titles);
+            cout << '\t' << ++idx << '\t' << title << ' ' << setw(40 - title.length()) << albums.albList[i].artistId;
+            cout << '\t' << albums.albList[i].albumId << setw(3) << '\t' << '.' << std::string(albFile.recordFormats) << setw(10) << '\t' << std::string(albFile.datePublished) << setw(5) << '\t' << std::string(albFile.paths) << endl;
+        }
+    }
+    cout << endl << endl;
+    if(idx == 0)
+        cout << "\tNothing to display. Please add an album." << endl;
+    system("pause");
+}
+
+void AlbumView::displaySearchResult(std::fstream& AlbFile, const albumList& albums, const indexSet& result) {
+    cout << endl << " \tAlbum Search Results:" << endl;
+    AlbumFile albFile;
+    cout << "\t" << result.indexes.size() << " Albums found." << endl << endl;
+    cout << endl << "\tNo.\t" << "Titles" << setw(33) << "IdsRef" << setw(11) << "\tAlbumIds";
+    cout << "\tRecordFormat \t" << "DatePublisheds" << setw(5) << "\tPaths" << endl;
+    for (size_t i = 0; i < result.indexes.size(); i++){
+        size_t idx = result.indexes[i];
+        AlbFile.seekg(albums.albList[idx].pos, ios::beg);
+        AlbFile.read((char*)&albFile, sizeof(albFile));
+        std::string title(albFile.titles);
+        cout << '\t' << idx << '\t' << title << setw(40 - title.length()) << albums.albList[idx].artistId;
+        cout << '\t' << albums.albList[idx].albumId << setw(3) << '\t' << '.' << std::string(albFile.recordFormats) << setw(10) << '\t' << std::string(albFile.datePublished) << setw(5) << '\t' << std::string(albFile.paths) << endl;
+    }
+    cout << endl << endl;
+}
+
+void AlbumView::displayOne(std::fstream& AlbFile, const albumList& albums, int idx) {
+    AlbumFile albFile;
+    AlbFile.seekg(albums.albList[idx].pos, ios::beg);
+    AlbFile.read((char*)&albFile, sizeof(albFile));
+    cout << endl << endl;
+    cout << "\t\tTitle:          " << std::string(albFile.titles) << endl;
+    cout << "\t\tAlbum ID:       " << std::string(albFile.albumIds) << endl;
+    cout << "\t\tRecord Format:  ." << std::string(albFile.recordFormats) << endl;
+    cout << "\t\tDate Published: " << std::string(albFile.datePublished) << endl;
+    cout << "\t\tPath:           " << std::string(albFile.paths) << endl;
+    cout << endl << endl;
+    system("pause");
+}
+
+// MenuView implementations
+int MenuView::mainMenu() {
+    int c;
+    do{
+        system("COLOR 0A");
+        system("cls");
+        cout<<"\n\n";
+        cout<<"\n                                 *ALBUM MANAGEMENT SYSTEM*               ";
+        cout<<"\n\n                       Enter  1 :  >> ARTIST MANAGER                           ";
+        cout<<"\n\n                       Enter  2 :  >> ALBUM MANAGER                            ";
+        cout<<"\n\n                       Enter  3 :  >> STATISTICS                              ";
+        cout<<"\n\n                       Enter  4 :  >> EXIT.                              \n\n ";
+        cout<<"\n choice:    ";
+        cin>>c;
+        cin.clear();
+        cin.ignore(INT_MAX,'\n');
+        if (c>4 || c<1){
+            cout<<"Wrong Choice!";
+            cout<<endl<<endl;
+            system ("pause");
+            system ("cls");
+        }
+    }while(c>4 || c<1);
+    return c;
+}
+
+int MenuView::artistMenu() {
+    int c;
+    do{
+        system("COLOR 4E");
+        system("cls");
+        cout<<"\n\n";
+        cout<<"\n                                 *Artist Menu*               ";
+        cout<<"\n\n                       Enter  1 :  >> Artist Viewer                           ";
+        cout<<"\n\n                       Enter  2 :  >> Artist Editor                            ";
+        cout<<"\n\n                       Enter  3 :  >> Export Artists to CSV                              ";
+        cout<<"\n\n                       Enter  4 :  >> Go To Main Menu                              ";
+        cout<<"\n\n                       Enter  5 :  >> EXIT.                              \n\n ";
+        cout<<"\n choice:    ";
+        cin>>c;
+        cin.clear();
+        cin.ignore(INT_MAX,'\n');
+        if (c>5 || c<1){
+            cout<<"Wrong Choice!";
+            cout<<endl<<endl;
+            system ("pause");
+            system ("cls");
+        }
+    }while(c>5 || c<1);
+    return c;
+}
+
+int MenuView::viewArtistMenu() {
+    int c;
+    system("COLOR 4E");
+    do{
+    system("cls");
+    cout<<"\n\n";
+    cout<<"\n                                 *View ArtistMenu*               ";
+    cout<<"\n\n                       Enter  1 :  >> Display All Artist    ";
+    cout<<"\n\n                       Enter  2 :  >> View Artist By Search  ";
+    cout<<"\n\n                       Enter  3 :  >> GO BACK.          \n\n ";
+    cout<<"\n choice:    ";
+    cin>>c;
+    cin.clear();
+    cin.ignore(INT_MAX,'\n');
+    if (c>3 || c<1){
+        cout<<"Wrong Choice!";
+        cout<<endl<<endl;
+        system ("pause");
+        system ("cls");
+    }
+    }while(c>3 || c<1);
+    return c;
+}
+
+int MenuView::editArtistMenu() {
+    int c;
+    system("COLOR 2E");
+    do{
+        system("cls");
+        cout<<"\n\n";
+        cout<<"\n                                 *Edit Artist Menu*               ";
+        cout<<"\n\n                       Enter  1 :  >> ADD Artist    ";
+        cout<<"\n\n                       Enter  2 :  >> Edit Artist  ";
+        cout<<"\n\n                       Enter  3 :  >> Delete Artist  ";
+        cout<<"\n\n                       Enter  4 :  >> GO BACK.          \n\n ";
+        cout<<"\n choice:    ";
+        cin>>c;
+        cin.clear();
+        cin.ignore(INT_MAX,'\n');
+        if (c>4 || c<1){
+            cout<<"Wrong Choice!"<<endl;
+            cout<<endl<<endl;
+            system ("pause");
+            system ("cls");
+            }
+    }while(c>4 || c<1);
+    return c;
+}
+
+int MenuView::albumMenu() {
+    int c;
+    do{
+        system("COLOR 1B");
+        system("cls");
+        cout<<"\n\n";
+        cout<<"\n                                 *Album Menu*               ";
+        cout<<"\n\n                       Enter  1 :  >> Album Viewer                           ";
+        cout<<"\n\n                       Enter  2 :  >> Album Editor                            ";
+        cout<<"\n\n                       Enter  3 :  >> Export Albums to CSV                              ";
+        cout<<"\n\n                       Enter  4 :  >> Go To Main Menu                              ";
+        cout<<"\n\n                       Enter  5 :  >> EXIT.                              \n\n ";
+        cout<<"\n choice:    ";
+        cin>>c;
+        cin.clear();
+        cin.ignore(INT_MAX,'\n');
+        if (c>5 || c<1){
+            cout<<"Wrong Choice!";
+            cout<<endl<<endl;
+            system ("pause");
+            system ("cls");
+        }
+    }while(c>5 || c<1);
+    return c;
+}
+
+int MenuView::viewAlbumMenu() {
+    int c;
+    system("COLOR 2E");
+    do{
+    system("cls");
+    cout<<"\n\n";
+    cout<<"\n                                 *View Album Menu*               ";
+    cout<<"\n\n                       Enter  1 :  >> Display All Albums    ";
+    cout<<"\n\n                       Enter  2 :  >> View Artist Albums By Search   ";
+    cout<<"\n\n                       Enter  3 :  >> Advanced Search   ";
+    cout<<"\n\n                       Enter  4 :  >> GO BACK.          \n\n ";
+    cout<<"\n choice:    ";
+    cin>>c;
+    cin.clear();
+    cin.ignore(INT_MAX,'\n');
+    if (c>4 || c<1){
+        cout<<"Wrong Choice!";
+        cout<<endl<<endl;
+        system ("pause");
+        system ("cls");
+    }
+    }while(c>4 || c<1);
+    return c;
+}
+
+int MenuView::editAlbumMenu() {
+    int c;
+    system("COLOR 2E");
+    do{
+        system("cls");
+        cout<<"\n\n";
+        cout<<"\n                                 *Edit Album Menu*               ";
+        cout<<"\n\n                       Enter  1 :  >> ADD Album    ";
+        cout<<"\n\n                       Enter  2 :  >> Edit Album  ";
+        cout<<"\n\n                       Enter  3 :  >> Delete Album  ";
+        cout<<"\n\n                       Enter  4 :  >> GO BACK.          \n\n ";
+        cout<<"\n choice:    ";
+        cin>>c;
+        cin.clear();
+        cin.ignore(INT_MAX,'\n');
+        if (c>4 || c<1){
+            cout<<"Wrong Choice!"<<endl;
+            cout<<endl<<endl;
+            system ("pause");
+            system ("cls");
+            }
+    }while(c>4 || c<1);
+    return c;
 }

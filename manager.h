@@ -5,12 +5,14 @@
 #include <vector>
 #include <exception>
 #include <algorithm>
-#include <filesystem>
+#include <fstream>
+#include <chrono>
+#include <ctime>
 
 const int DEFAULT_SIZE = 10;
 int lastArtistID = 999, lastAlbumID = 1999;
-const std::filesystem::path artistFilePath = "Artist.bin";
-const std::filesystem::path albumFilePath = "Album.bin";
+const std::string artistFilePath = "Artist.bin";
+const std::string albumFilePath = "Album.bin";
 
 // Custom Exception Classes
 class AlbumManagementException : public std::exception {
@@ -34,6 +36,39 @@ public:
 class SearchException : public AlbumManagementException {
 public:
     SearchException(const std::string& msg) : AlbumManagementException("Search Error: " + msg) {}
+};
+
+// Simple Logging Class
+class Logger {
+private:
+    std::ofstream logFile;
+    static Logger* instance;
+    Logger() {
+        logFile.open("album_system.log", std::ios::app);
+        if (logFile.is_open()) {
+            log("Logger initialized");
+        }
+    }
+public:
+    static Logger* getInstance() {
+        if (instance == nullptr) {
+            instance = new Logger();
+        }
+        return instance;
+    }
+    void log(const std::string& message) {
+        if (logFile.is_open()) {
+            auto now = std::chrono::system_clock::now();
+            auto time = std::chrono::system_clock::to_time_t(now);
+            logFile << std::ctime(&time) << ": " << message << std::endl;
+        }
+    }
+    ~Logger() {
+        if (logFile.is_open()) {
+            log("Logger shutting down");
+            logFile.close();
+        }
+    }
 };
 
 //Artist information
@@ -129,15 +164,41 @@ struct indexSet {
     std::vector<int> indexes;
 };
 
-class AlbumManager;
 class FileHandler;
+
+// View Classes for MVC-like separation
+class ArtistView {
+public:
+    static void displayAll(std::fstream& ArtFile, const artistList& artist);
+    static void displaySearchResult(std::fstream& ArtFile, const artistList& artist, const indexSet& result);
+    static void displayOne(std::fstream& ArtFile, const artistList& artist, int idx);
+    static void displayStatistics(const artistList& artist, const albumList& album);
+};
+
+class AlbumView {
+public:
+    static void displayAll(std::fstream& AlbFile, const albumList& album);
+    static void displaySearchResult(std::fstream& AlbFile, const albumList& album, const indexSet& result);
+    static void displayOne(std::fstream& AlbFile, const albumList& album, int idx);
+};
+
+class MenuView {
+public:
+    static int mainMenu();
+    static int artistMenu();
+    static int albumMenu();
+    static int viewArtistMenu();
+    static int viewAlbumMenu();
+    static int editArtistMenu();
+    static int editAlbumMenu();
+};
 
 //Prototype Declarations
 void welcome();
 void printError(int errId);
 std::string intToString(int last, const std::string& prefix);
 int stringToInt(const std::string& arr);
-void openFile(std::fstream& fstr, const std::filesystem::path& path);
+void openFile(std::fstream& fstr, const std::string& path);
 
 
 bool loading(std::fstream& ArtFile, std::fstream& AlbFile, artistList& artist, albumList& album, indexSet& delArtFile, indexSet& delAlbFile);
@@ -217,6 +278,8 @@ bool searchAlbumByTitle(std::fstream& AlbFile, const albumList& album, indexSet&
 bool searchAlbumByDateRange(std::fstream& AlbFile, const albumList& album, indexSet& result, unsigned int startDay, unsigned int startMonth, unsigned int startYear, unsigned int endDay, unsigned int endMonth, unsigned int endYear);
 void advancedSearchAlbums(std::fstream& AlbFile, const albumList& album, indexSet& result);
 
+class AlbumManager;
+
 class ArtistManager {
 private:
     artistList artists;
@@ -265,13 +328,13 @@ public:
 
 class FileHandler {
 private:
-    std::filesystem::path artistFilePath = "Artist.bin";
-    std::filesystem::path albumFilePath = "Album.bin";
+    std::string artistFilePath = "Artist.bin";
+    std::string albumFilePath = "Album.bin";
 public:
     FileHandler() = default;
-    void openFile(std::fstream& fstr, const std::filesystem::path& path);
-    const std::filesystem::path& getArtistFilePath() const { return artistFilePath; }
-    const std::filesystem::path& getAlbumFilePath() const { return albumFilePath; }
+    void openFile(std::fstream& fstr, const std::string& path);
+    const std::string& getArtistFilePath() const { return artistFilePath; }
+    const std::string& getAlbumFilePath() const { return albumFilePath; }
 };
 
 #endif
