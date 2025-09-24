@@ -934,6 +934,20 @@ bool editArtistInfo(std::fstream& ArtFile, artistList& artist, int idx)
     Artist art = getArtistInfo();
     art.setArtistId(artist.artList[idx].artistId);
     ArtistFile artFile;
+
+    if (!ArtFile.is_open()) {
+        try {
+            openFile(ArtFile, artistFilePath);
+        } catch (const FileException& e) {
+            cout << e.what() << endl;
+            system("pause");
+            Logger::getInstance()->log("Failed to open artist file for editing");
+            return false;
+        }
+    }
+
+    ArtFile.clear();
+    ArtFile.seekp(artist.artList[idx].pos, ios::beg);
     strncpy(artFile.artistIds, art.getArtistId().c_str(), 7);
     artFile.artistIds[7] = '\0';
     strncpy(artFile.names, art.getName().c_str(), 49);
@@ -943,9 +957,9 @@ bool editArtistInfo(std::fstream& ArtFile, artistList& artist, int idx)
     artFile.phones[14] = '\0';
     strncpy(artFile.emails, art.getEmail().c_str(), 49);
     artFile.emails[49] = '\0';
-    ArtFile.seekp(artist.artList[idx].pos, ios::beg);
     pos = ArtFile.tellp();
     ArtFile.write((char*)&artFile, sizeof(ArtistFile));
+    ArtFile.flush();
     artist.artList[idx].artistId = art.getArtistId();
     artist.artList[idx].name = art.getName();
     artist.artList[idx].pos = pos;
@@ -1048,6 +1062,17 @@ void removeArtistAllAlbums(std::fstream& ArtFile, std::fstream& AlbFile, const a
 {
     int pos;
     AlbumFile BLANK_ALBUM_FILE = {"-1", "-1", "", "", "", ""};
+    if (!AlbFile.is_open()) {
+        try {
+            openFile(AlbFile, albumFilePath);
+        } catch (const FileException& e) {
+            cout << e.what() << endl;
+            system("pause");
+            Logger::getInstance()->log("Failed to open album file for bulk artist removal");
+            return;
+        }
+    }
+    AlbFile.clear();
     AlbFile.seekp(album.albList[i].pos, ios::beg);
     pos = AlbFile.tellp();
     AlbFile.write((char*)&BLANK_ALBUM_FILE, sizeof(AlbumFile));
@@ -1281,6 +1306,15 @@ bool addAlbum(std::fstream& ArtFile, std::fstream& AlbFile, const artistList& ar
             albFile.albumIds[7] = '\0';
             strncpy(albFile.artistIdRefs, artist.artList[select].artistId.c_str(), 7);
             albFile.artistIdRefs[7] = '\0';
+            if (!AlbFile.is_open()) {
+                try {
+                    openFile(AlbFile, albumFilePath);
+                } catch (const FileException& e) {
+                    cout << e.what() << endl;
+                    system("pause");
+                    return false;
+                }
+            }
             AlbFile.clear();
             AlbFile.seekp(0, ios::end);
             pos = AlbFile.tellp();
@@ -1594,9 +1628,21 @@ bool editAlbumInfo(std::fstream& AlbFile, albumList& album, int idx)
     albFile.albumIds[7] = '\0';
     strncpy(albFile.artistIdRefs, album.albList[idx].artistId.c_str(), 7);
     albFile.artistIdRefs[7] = '\0';
+    if (!AlbFile.is_open()) {
+        try {
+            openFile(AlbFile, albumFilePath);
+        } catch (const FileException& e) {
+            cout << e.what() << endl;
+            system("pause");
+            Logger::getInstance()->log("Failed to open album file for editing");
+            return false;
+        }
+    }
+    AlbFile.clear();
     AlbFile.seekp(album.albList[idx].pos, ios::beg);
     pos = AlbFile.tellp();
     AlbFile.write((char*)&albFile, sizeof(albFile));
+    AlbFile.flush();
     album.albList[idx].albumId = std::string(albFile.albumIds);
     album.albList[idx].artistId = std::string(albFile.artistIdRefs);
     album.albList[idx].title = std::string(albFile.titles);
@@ -1660,9 +1706,21 @@ void removeAlbum(std::fstream& AlbFile, albumList& album, indexSet& delAlbArray,
 {
     int pos;
     AlbumFile BLANK_ALBUM_FILE = {"-1", "-1", "", "", "", ""};
+    if (!AlbFile.is_open()) {
+        try {
+            openFile(AlbFile, albumFilePath);
+        } catch (const FileException& e) {
+            cout << e.what() << endl;
+            system("pause");
+            Logger::getInstance()->log("Failed to open album file for deletion");
+            return;
+        }
+    }
+    AlbFile.clear();
     AlbFile.seekp(album.albList[idx].pos, ios::beg);
     pos = AlbFile.tellp();
     AlbFile.write((char*)&BLANK_ALBUM_FILE, sizeof(AlbumFile));
+    AlbFile.flush();
     album.albList[idx].albumId = BLANK_ALBUM_FILE.albumIds;
     album.albList[idx].artistId = BLANK_ALBUM_FILE.artistIdRefs;
     album.albList[idx].title = BLANK_ALBUM_FILE.titles;
@@ -2061,6 +2119,16 @@ bool AlbumManager::add(std::fstream& ArtFile, std::fstream& AlbFile, const Artis
             albFile.albumIds[7] = '\0';
             strncpy(albFile.artistIdRefs, artistManager.getArtists().artList[select].artistId.c_str(), 7);
             albFile.artistIdRefs[7] = '\0';
+            if (!AlbFile.is_open()) {
+                try {
+                    openFile(AlbFile, albumFilePath);
+                } catch (const FileException& e) {
+                    cout << e.what() << endl;
+                    system("pause");
+                    Logger::getInstance()->log("Failed to open album file for adding");
+                    return false;
+                }
+            }
             AlbFile.clear();
             AlbFile.seekp(0, ios::end);
             pos = AlbFile.tellp();
@@ -2180,9 +2248,21 @@ void AlbumManager::remove(std::fstream& AlbFile, indexSet& result, int idx) {
     Logger::getInstance()->log("Removing album: " + albums.albList[idx].title + " with ID: " + albums.albList[idx].albumId);
     int pos;
     AlbumFile BLANK_ALBUM_FILE = {"-1", "-1", "", "", "", ""};
+    if (!AlbFile.is_open()) {
+        try {
+            openFile(AlbFile, albumFilePath);
+        } catch (const FileException& e) {
+            cout << e.what() << endl;
+            system("pause");
+            Logger::getInstance()->log("Failed to open album file for removal");
+            return;
+        }
+    }
+    AlbFile.clear();
     AlbFile.seekp(albums.albList[idx].pos, ios::beg);
     pos = AlbFile.tellp();
     AlbFile.write((char*)&BLANK_ALBUM_FILE, sizeof(AlbumFile));
+    AlbFile.flush();
     albums.albList[idx].albumId = BLANK_ALBUM_FILE.albumIds;
     albums.albList[idx].artistId = BLANK_ALBUM_FILE.artistIdRefs;
     albums.albList[idx].title = BLANK_ALBUM_FILE.titles;
@@ -2300,9 +2380,9 @@ bool FileArtistRepository::loadArtists(artistList& artists, indexSet& deletedArt
         fileStream->read((char*)&artFile, sizeof(artFile));
         if (std::string(artFile.artistIds) != "-1") {
             artists.artList.push_back({std::string(artFile.artistIds), std::string(artFile.names), pos});
-            std::string id = intToString(lastArtistID, "art");
-            if (std::string(artFile.artistIds) > id) {
-                lastArtistID = stringToInt(std::string(artFile.artistIds));
+            int currentId = stringToInt(std::string(artFile.artistIds));
+            if (currentId > lastArtistID) {
+                lastArtistID = currentId;
             }
         } else {
             deletedArtists.indexes.push_back(pos);
@@ -2456,9 +2536,9 @@ bool FileAlbumRepository::loadAlbums(albumList& albums, indexSet& deletedAlbums)
         fileStream->read((char*)&albFile, sizeof(albFile));
         if (std::string(albFile.albumIds) != "-1") {
             albums.albList.push_back(albumIndex{std::string(albFile.albumIds), std::string(albFile.artistIdRefs), std::string(albFile.titles), pos});
-            std::string id = intToString(lastAlbumID, "alb");
-            if (std::string(albFile.albumIds) > id) {
-                lastAlbumID = stringToInt(std::string(albFile.albumIds));
+            int currentAlbumId = stringToInt(std::string(albFile.albumIds));
+            if (currentAlbumId > lastAlbumID) {
+                lastAlbumID = currentAlbumId;
             }
         } else {
             deletedAlbums.indexes.push_back(pos);

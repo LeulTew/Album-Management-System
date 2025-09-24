@@ -65,6 +65,13 @@ Transform the existing C++ console-based Album Management System into a modern, 
 - **8.5** Package the application for different platforms
 - **8.6** ✅ Write Test Tasks.md Black Box table of what to test with entries written clearly(full app)
 
+### 9. Persistence Reliability
+- [x] Ensure artist edits reopen and flush `Artist.bin` so updates persist immediately
+- [x] Ensure album edits reopen and flush `Album.bin` to prevent stale data after validation
+- [x] Reopen and flush album deletions (single and bulk) to avoid ghost records in listings
+- [x] Guard album additions against closed/failed streams before appending new records
+- [ ] Review repository-layer write/delete helpers to add missing flush calls and error handling
+
 
 ## Implementation Strategy
 - Execute subtasks in order, starting with foundational changes
