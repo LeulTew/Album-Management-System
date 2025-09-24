@@ -3,20 +3,20 @@
 ## Overview
 Transform the existing C++ console-based Album Management System into a modern, robust, and feature-rich application that demonstrates advanced programming skills and best practices.
 
-**Current Status**: Code modernized with std::string and std::vector, export features added, advanced search and statistics implemented. Compilation errors fixed: updated function signatures, added missing functions (intToString, stringToInt, farewell), corrected openFile to accept std::string. Project compiles successfully in CodeBlocks. Git repository initialized with comprehensive test suite and documentation.
+**Current Status**: Code modernized with std::string and std::vector, export features added, advanced search and statistics implemented. Exception handling implemented with custom exception classes. Modern C++ features used (lambdas, auto, range-based loops). Compilation errors fixed: updated function signatures, corrected lambda comparators for sorting, fixed member access. Project compiles successfully in CodeBlocks. Git repository initialized with comprehensive test suite and documentation. Architecture refactoring in progress: Artist and Album structs converted to classes with encapsulation.
 
 ## Major Improvement Areas
 
 ### 1. Code Modernization
 - **1.1** Replace all raw pointers with smart pointers (unique_ptr, shared_ptr)
 - **1.2** Implement RAII (Resource Acquisition Is Initialization) principles
-- **1.3** Add comprehensive exception handling with custom exception classes
-- **1.4** Use modern C++ features (auto, range-based loops, lambda functions)
+- **1.3** ✅ Add comprehensive exception handling with custom exception classes
+- **1.4** ✅ Use modern C++ features (auto, range-based loops, lambda functions)
 - **1.5** ✅ Replace C-style strings and arrays with std::string and std::vector
 - **1.6** Use std::filesystem for file operations instead of C-style file I/O
 
 ### 2. Architecture Refactoring
-- **2.1** Convert structs to proper classes with encapsulation
+- **2.1** ✅ Convert structs to proper classes with encapsulation
 - **2.2** Create separate classes: Artist, Album, ArtistManager, AlbumManager, FileHandler
 - **2.3** Implement proper separation of concerns (MVC-like pattern)
 - **2.4** Add an interface layer for data persistence

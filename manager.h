@@ -3,6 +3,32 @@
 
 #include <string>
 #include <vector>
+#include <exception>
+#include <algorithm>
+
+// Custom Exception Classes
+class AlbumManagementException : public std::exception {
+private:
+    std::string message;
+public:
+    AlbumManagementException(const std::string& msg) : message(msg) {}
+    const char* what() const noexcept override { return message.c_str(); }
+};
+
+class FileException : public AlbumManagementException {
+public:
+    FileException(const std::string& msg) : AlbumManagementException("File Error: " + msg) {}
+};
+
+class ValidationException : public AlbumManagementException {
+public:
+    ValidationException(const std::string& msg) : AlbumManagementException("Validation Error: " + msg) {}
+};
+
+class SearchException : public AlbumManagementException {
+public:
+    SearchException(const std::string& msg) : AlbumManagementException("Search Error: " + msg) {}
+};
 
 //Artist information
 struct ArtistFile {
@@ -13,12 +39,27 @@ struct ArtistFile {
     char emails[50];
 };
 
-struct Artist {
+class Artist {
+private:
     std::string artistId;
     std::string name;
     char gender;
     std::string phone;
     std::string email;
+public:
+    Artist() = default;
+    Artist(const std::string& id, const std::string& n, char g, const std::string& p, const std::string& e)
+        : artistId(id), name(n), gender(g), phone(p), email(e) {}
+    const std::string& getArtistId() const { return artistId; }
+    const std::string& getName() const { return name; }
+    char getGender() const { return gender; }
+    const std::string& getPhone() const { return phone; }
+    const std::string& getEmail() const { return email; }
+    void setArtistId(const std::string& id) { artistId = id; }
+    void setName(const std::string& n) { name = n; }
+    void setGender(char g) { gender = g; }
+    void setPhone(const std::string& p) { phone = p; }
+    void setEmail(const std::string& e) { email = e; }
 };
 
 struct artistIndex {
@@ -39,15 +80,6 @@ struct AlbumFile {
     char recordFormats[12];
     char datePublished[11];
     char paths[100];
-};
-
-struct Album {
-    std::string albumId;
-    std::string artistIdRef;
-    std::string title;
-    std::string recordFormat;
-    std::string datePublished;
-    std::string path;
 };
 
 struct albumIndex {
@@ -71,7 +103,7 @@ void welcome();
 void printError(int errId);
 std::string intToString(int last, const std::string& prefix);
 int stringToInt(const std::string& arr);
-bool openFile(std::fstream& fstr, const std::string& path);
+void openFile(std::fstream& fstr, const std::string& path);
 
 
 bool loading(std::fstream& ArtFile, std::fstream& AlbFile, artistList& artist, albumList& album, indexSet& delArtFile, indexSet& delAlbFile);
@@ -101,11 +133,11 @@ std::string getArtistName();
 char getArtistGender();
 std::string getArtistPhone();
 std::string getArtistEmail();
-bool validateName(const std::string& name);
+void validateName(const std::string& name);
 std::string formatName(std::string name);
-bool validateGender(char gender);
-bool validatePhone(const std::string& phone);
-bool validateEmail(const std::string& email);
+void validateGender(char gender);
+void validatePhone(const std::string& phone);
+void validateEmail(const std::string& email);
 std::string formatEmail(std::string email);
 void editArtist(std::fstream& ArtFile, artistList& artist, indexSet& result);
 int selectArtist(std::fstream& ArtFile, const artistList& artist, indexSet& result, const std::string& forWhat);
@@ -130,13 +162,13 @@ std::string getAlbumTitle();
 std::string getAlbumRecordFormat();
 std::string getAlbumDate();
 std::string getAlbumPath();
-bool validateAlbumTitle(const std::string& albumTitle);
+void validateAlbumTitle(const std::string& albumTitle);
 std::string formatAlbumTitle(std::string albumTitle);
-bool validateAlbumFormat(const std::string& albumFormat);
+void validateAlbumFormat(const std::string& albumFormat);
 std::string formatAlbumFormat(std::string albumFormat);
-bool validateAlbumDate(unsigned int day, unsigned int month, unsigned int year);
+void validateAlbumDate(unsigned int day, unsigned int month, unsigned int year);
 std::string formatAlbumDate(unsigned int day, unsigned int month, unsigned int year);
-bool validateAlbumPath(const std::string& albumPath);
+void validateAlbumPath(const std::string& albumPath);
 std::string formatAlbumPath(std::string albumPath);
 void editAlbum(std::fstream& ArtFile, std::fstream& AlbFile, const artistList& artist, albumList& album, indexSet& result);
 int selectAlbum(std::fstream& AlbFile, const artistList& artist, const albumList& album, indexSet& result, int idx, const std::string& forWhat);

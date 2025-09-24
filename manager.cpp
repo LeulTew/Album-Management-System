@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <cctype>
 #include <cstdio>
+#include "manager.h"
 
 using namespace std;
 
@@ -59,7 +60,7 @@ void printError(int errId){
 //
 void intToCharArray(int last, char id[], char prefix[])
 {
-    int i=6, j=0;
+    int i=6;
     strcpy(id, prefix);
     while(i>2){
         id[i--] = last%10 + '0';
@@ -73,7 +74,7 @@ int charArrayToInt(char *arr)
     int value, flag, r;
     flag = 1;
     value = 0;
-    for( int i=3; i<strlen(arr); i++){
+    for( size_t i=3; i<strlen(arr); i++){
         if( i==0 && arr[i]=='-' ){
             flag = -1;
             continue;
@@ -86,21 +87,19 @@ int charArrayToInt(char *arr)
 }
 
 //
-bool openFile(std::fstream& fstr, const std::string& path)
+void openFile(std::fstream& fstr, const std::string& path)
 {
     cout<<'\n';
     fstr.open(path, ios::in | ios::out | ios::binary);
-    if(fstr) return true;
+    if(fstr) return;
     fstr.clear();
     ofstream ofs(path, ios::out | ios::binary);
     if(ofs){
         ofs.close();
         fstr.open(path, ios::in | ios::out | ios::binary);
-        return true;
+        if(fstr) return;
     }
-    else{
-        return false;
-    }
+    throw FileException("Failed to open file: " + path);
 }
 
 std::string intToString(int last, const std::string& prefix) {
@@ -154,7 +153,9 @@ bool loadArtist(std::fstream& ArtFile, artistList& artist, indexSet& delArtFile)
     int nRec, pos;
     std::string id;
 
-    if(!openFile(ArtFile, artistFilePath)){
+    try {
+        openFile(ArtFile, artistFilePath);
+    } catch(const FileException& e) {
         printError(1);
         system("pause");
         return false;
@@ -188,7 +189,9 @@ bool loadAlbum(std::fstream& AlbFile, albumList& album, indexSet& delAlbFile)
     AlbumFile albFile;
     int nRec, pos;
 
-    if(!openFile(AlbFile, albumFilePath)) {
+    try {
+        openFile(AlbFile, albumFilePath);
+    } catch(const FileException& e) {
         printError(2);
         system("pause");
         return false;
@@ -201,7 +204,7 @@ bool loadAlbum(std::fstream& AlbFile, albumList& album, indexSet& delAlbFile)
     for (int i = 0; i < nRec; i++){
         AlbFile.read((char*)&albFile, sizeof(albFile));
         if (std::string(albFile.albumIds) != "-1"){
-            album.albList.push_back({std::string(albFile.albumIds), std::string(albFile.artistIdRefs), std::string(albFile.titles), pos});
+            album.albList.push_back(albumIndex{std::string(albFile.albumIds), std::string(albFile.artistIdRefs), std::string(albFile.titles), pos});
             std::string id = intToString(lastAlbumID, "alb");
             if (std::string(albFile.albumIds) > id){
                 lastAlbumID = stringToInt(std::string(albFile.albumIds));
@@ -219,25 +222,17 @@ bool loadAlbum(std::fstream& AlbFile, albumList& album, indexSet& delAlbFile)
 //7
 void sortArtist(artistList& artist)
 {
-    for (size_t i = 0; i < artist.artList.size(); i++ ){
-        for (size_t j = i + 1; j < artist.artList.size(); j++){
-            if (artist.artList[i].name > artist.artList[j].name){
-                std::swap(artist.artList[i], artist.artList[j]);
-            }
-        }
-    }
+    std::sort(artist.artList.begin(), artist.artList.end(), [](const artistIndex& a, const artistIndex& b) {
+        return a.name < b.name;
+    });
 }
 
 //8
 void sortAlbum(albumList& album)
 {
-    for (size_t i = 0; i < album.albList.size(); i++ ){
-        for (size_t j = i + 1; j < album.albList.size(); j++){
-            if (album.albList[i].artistId > album.albList[j].artistId){
-                std::swap(album.albList[i], album.albList[j]);
-            }
-        }
-    }
+    std::sort(album.albList.begin(), album.albList.end(), [](const albumIndex& a, const albumIndex& b) {
+        return a.artistId < b.artistId;
+    });
 }
 
 //9
@@ -317,7 +312,9 @@ void exportArtistsToCSV(const artistList& artist, const std::string& filename) {
     }
     file << "ID,Name,Gender,Phone,Email\n";
     std::fstream ArtFile;
-    if (!openFile(ArtFile, artistFilePath)) {
+    try {
+        openFile(ArtFile, artistFilePath);
+    } catch(const FileException& e) {
         std::cout << "Error opening artist file." << std::endl;
         return;
     }
@@ -340,7 +337,9 @@ void exportAlbumsToCSV(const albumList& album, const std::string& filename) {
     }
     file << "AlbumID,ArtistID,Title,RecordFormat,DatePublished,Path\n";
     std::fstream AlbFile;
-    if (!openFile(AlbFile, albumFilePath)) {
+    try {
+        openFile(AlbFile, albumFilePath);
+    } catch(const FileException& e) {
         std::cout << "Error opening album file." << std::endl;
         return;
     }
@@ -461,7 +460,7 @@ void displayAllArtist(std::fstream& ArtFile, const artistList& artist)
 
     cout << "   " << left << setw(4) << "No" << setw(25) << "Name" << setw(12) << "Artist ID" << setw(8) << "Gender" << setw(15) << "Phone" << setw(30) << "Email" << endl;
     cout << "   " << string(90, '-') << endl;
-    for(size_t i = 0; i < artist.artList.size(); i++){
+    for(size_t i = 0; i < artist.artList.size(); ++i){
         ArtFile.seekg(artist.artList[i].pos, ios::beg);
         ArtFile.read((char*)&artFile, sizeof(artFile));
         cout << "   " << setw(4) << idx+1
@@ -470,7 +469,7 @@ void displayAllArtist(std::fstream& ArtFile, const artistList& artist)
              << setw(8) << artFile.genders
              << setw(15) << std::string(artFile.phones).c_str()
              << setw(30) << std::string(artFile.emails).c_str() << endl;
-        idx++;
+        ++idx;
     }
     if(idx == 0){
         system("cls");
@@ -633,21 +632,21 @@ bool addArtist(std::fstream& ArtFile, artistList& artist)
         int pos;
         Artist art = getArtistInfo();
         std::string id = intToString(++lastArtistID, "art");
-        art.artistId = id;
+        art.setArtistId(id);
         ArtistFile artFile;
-        strncpy(artFile.artistIds, art.artistId.c_str(), 7);
+        strncpy(artFile.artistIds, art.getArtistId().c_str(), 7);
         artFile.artistIds[7] = '\0';
-        strncpy(artFile.names, art.name.c_str(), 49);
+        strncpy(artFile.names, art.getName().c_str(), 49);
         artFile.names[49] = '\0';
-        artFile.genders = art.gender;
-        strncpy(artFile.phones, art.phone.c_str(), 14);
+        artFile.genders = art.getGender();
+        strncpy(artFile.phones, art.getPhone().c_str(), 14);
         artFile.phones[14] = '\0';
-        strncpy(artFile.emails, art.email.c_str(), 49);
+        strncpy(artFile.emails, art.getEmail().c_str(), 49);
         artFile.emails[49] = '\0';
         ArtFile.seekp(0, ios::end);
         pos = ArtFile.tellp();
         ArtFile.write((char*)&artFile, sizeof(ArtistFile));
-        artist.artList.push_back({art.artistId, art.name, pos});
+        artist.artList.push_back({art.getArtistId(), art.getName(), pos});
         sortArtist(artist);
         return true;
     }else
@@ -659,11 +658,11 @@ Artist getArtistInfo()
 {
     Artist art;
     cin.ignore();
-    art.name = getArtistName();
-    art.gender = getArtistGender();
+    art.setName(getArtistName());
+    art.setGender(getArtistGender());
     cin.ignore();
-    art.phone = getArtistPhone();
-    art.email = getArtistEmail();
+    art.setPhone(getArtistPhone());
+    art.setEmail(getArtistEmail());
     return art;
 }
 
@@ -671,15 +670,17 @@ Artist getArtistInfo()
 std::string getArtistName()
 {
     std::string name;
-    bool valid;
-    do
+    while(true)
     {
         cout << "Enter Artist name: ";
         getline(cin, name);
-        valid = validateName(name);
-        if (!valid)
-            cout << "Error-Artist name is not valid!" << endl;
-    }while(!valid);
+        try {
+            validateName(name);
+            break;
+        } catch(const ValidationException& e) {
+            cout << e.what() << endl;
+        }
+    }
     name = formatName(name);
     return name;
 }
@@ -687,7 +688,6 @@ std::string getArtistName()
 //26
 char getArtistGender()
 {
-    bool valid;
     char gender;
     do
     {
@@ -695,62 +695,67 @@ char getArtistGender()
         cin>>gender;
         if (gender>='a' && gender<='z'){
                 gender-=32;}
-        valid=validateGender(gender);
-        if (!valid)
-            cout<<"Error-Artist gender should be male(M) or female(F)!"<<endl;
-    }while(!valid);
-    return gender;
+        try {
+            validateGender(gender);
+            return gender;
+        } catch(const ValidationException& e) {
+            cout<<e.what()<<endl;
+        }
+    }while(true);
 }
 
 //27
 std::string getArtistPhone()
 {
     std::string phone;
-    bool valid = true;
     do
     {
         cout << "Enter Artist Phone Number: ";
         getline(cin, phone);
         cin.clear();
         cin.ignore(INT_MAX, '\n');
-        valid = validatePhone(phone);
-        if (!valid)
-            cout << "Error-Artist phone is not valid!" << endl;
-    }while(!valid);
-    return phone;
+        try {
+            validatePhone(phone);
+            return phone;
+        } catch(const ValidationException& e) {
+            cout << e.what() << endl;
+        }
+    }while(true);
 }
 
 //28
 std::string getArtistEmail()
 {
     std::string email;
-    bool valid;
     do
     {
         cout << "<sample@email.com> or <sample@email> \nEnter Artist email: ";
         getline(cin, email);
-        valid = validateEmail(email);
-        if (!valid)
-            cout << "Error-Artist email is not valid!" << endl;
-    }while(!valid);
+        try {
+            validateEmail(email);
+            break;
+        } catch(const ValidationException& e) {
+            cout << e.what() << endl;
+        }
+    }while(true);
     email = formatEmail(email);
     return email;
 }
 
 //29.	validateName
-bool validateName(const std::string& name)
+void validateName(const std::string& name)
 {
     if (name.empty()){
-        return false;
+        throw ValidationException("Artist name cannot be empty!");
     }else if (name[0] == ' '){
-        return false;
+        throw ValidationException("Artist name cannot start with a space!");
     }else{
         for(char c : name){
             if(!(c == ' ' || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z'))){
-                return false;}
+                throw ValidationException("Artist name contains invalid characters!");
+            }
         }
     }
-    return true;
 }
 
 //30
@@ -770,44 +775,42 @@ std::string formatName(std::string name)
 }
 
 //31
-bool validateGender(char gender)
+void validateGender(char gender)
 {
-    if (gender =='M' || gender =='F')
-        return true;
-    return false;
+    if (!(gender =='M' || gender =='F'))
+        throw ValidationException("Artist gender should be male(M) or female(F)!");
 }
 
 //32
-bool validatePhone(const std::string& phone)
+void validatePhone(const std::string& phone)
 {
     if (phone.length() == 0)
-        return false;
+        throw ValidationException("Phone number cannot be empty!");
     else{
         for(char c : phone){
             if(c < '0' || c > '9'){
-                return false;}
+                throw ValidationException("Phone number must contain only digits!");
+            }
         }
     }
-    return true;
 }
 
 //33
-bool validateEmail(const std::string& email)
+void validateEmail(const std::string& email)
 {
     int domain = 0;
     if (email.empty()){
-        return false;
+        throw ValidationException("Email cannot be empty!");
     }else if (email[0] == ' ' || email[0] == '@'){
-        return false;
+        throw ValidationException("Email cannot start with space or @!");
     }else{
         for(char c : email){
             if (c == '@')
                 domain++;
         }
         if(domain != 1)
-            return false;
+            throw ValidationException("Email must contain exactly one @!");
         }
-    return true;
 }
 
 //34
@@ -869,22 +872,22 @@ bool editArtistInfo(std::fstream& ArtFile, artistList& artist, int idx)
     int pos;
     displayOneArtist(ArtFile, artist, idx);
     Artist art = getArtistInfo();
-    art.artistId = artist.artList[idx].artistId;
+    art.setArtistId(artist.artList[idx].artistId);
     ArtistFile artFile;
-    strncpy(artFile.artistIds, art.artistId.c_str(), 7);
+    strncpy(artFile.artistIds, art.getArtistId().c_str(), 7);
     artFile.artistIds[7] = '\0';
-    strncpy(artFile.names, art.name.c_str(), 49);
+    strncpy(artFile.names, art.getName().c_str(), 49);
     artFile.names[49] = '\0';
-    artFile.genders = art.gender;
-    strncpy(artFile.phones, art.phone.c_str(), 14);
+    artFile.genders = art.getGender();
+    strncpy(artFile.phones, art.getPhone().c_str(), 14);
     artFile.phones[14] = '\0';
-    strncpy(artFile.emails, art.email.c_str(), 49);
+    strncpy(artFile.emails, art.getEmail().c_str(), 49);
     artFile.emails[49] = '\0';
     ArtFile.seekp(artist.artList[idx].pos, ios::beg);
     pos = ArtFile.tellp();
     ArtFile.write((char*)&artFile, sizeof(ArtistFile));
-    artist.artList[idx].artistId = art.artistId;
-    artist.artList[idx].name = art.name;
+    artist.artList[idx].artistId = art.getArtistId();
+    artist.artList[idx].name = art.getName();
     artist.artList[idx].pos = pos;
     cout << "\n\tEdited \n\n";
     system("pause");
@@ -1220,7 +1223,7 @@ bool addAlbum(std::fstream& ArtFile, std::fstream& AlbFile, const artistList& ar
             AlbFile.seekp(0, ios::end);
             pos = AlbFile.tellp();
             AlbFile.write((char*)&albFile, sizeof(albFile));
-            album.albList.push_back({std::string(albFile.albumIds), std::string(albFile.artistIdRefs), std::string(albFile.titles), pos});
+            album.albList.push_back(albumIndex{std::string(albFile.albumIds), std::string(albFile.artistIdRefs), std::string(albFile.titles), pos});
             sortAlbum(album);
             cout << endl;
             cout << " Album ID: " << albFile.albumIds << endl;
@@ -1257,15 +1260,17 @@ AlbumFile getAlbumInfo()
 std::string getAlbumTitle()
 {
     std::string title;
-    bool valid;
     do
     {
         cout << "Enter album title: ";
         getline(cin, title);
-        valid = validateAlbumTitle(title);
-        if (!valid)
-            cout << "Error-Album title is not valid!" << endl;
-    }while(!valid);
+        try {
+            validateAlbumTitle(title);
+            break;
+        } catch(const ValidationException& e) {
+            cout << e.what() << endl;
+        }
+    }while(true);
     title = formatAlbumTitle(title);
     return title;
 }
@@ -1274,14 +1279,16 @@ std::string getAlbumTitle()
 std::string getAlbumRecordFormat()
 {
     std::string albumFormat;
-    bool valid;
     do{
         cout << "Enter the record format of the album: ";
         getline(cin, albumFormat);
-        valid = validateAlbumFormat(albumFormat);
-        if(!valid)
-            cout << "Error-Album record format is not valid!" << endl;
-    }while(!valid);
+        try {
+            validateAlbumFormat(albumFormat);
+            break;
+        } catch(const ValidationException& e) {
+            cout << e.what() << endl;
+        }
+    }while(true);
     albumFormat = formatAlbumFormat(albumFormat);
     return albumFormat;
 }
@@ -1289,7 +1296,6 @@ std::string getAlbumRecordFormat()
 //55
 std::string getAlbumDate()
 {
-    bool valid;
     unsigned int day, month, year;
     do{
         cout << "Enter the date published (DD/MM/YYYY): ";
@@ -1298,11 +1304,13 @@ std::string getAlbumDate()
         cin >> month;
         cin.ignore();
         cin >> year;
-        valid = validateAlbumDate(day, month, year);
-        if(!valid){
-            cout << "Error-Invalid date entered." << endl;
+        try {
+            validateAlbumDate(day, month, year);
+            break;
+        } catch(const ValidationException& e) {
+            cout << e.what() << endl;
         }
-    }while(!valid);
+    }while(true);
     return formatAlbumDate(day, month, year);
 }
 
@@ -1310,34 +1318,34 @@ std::string getAlbumDate()
 std::string getAlbumPath()
 {
     std::string albumPath;
-    bool valid;
     do{
         cout << "Enter album path: ";
         getline(cin, albumPath);
-        valid = validateAlbumPath(albumPath);
-        if(!valid){
-            cout << "Error-Invalid album path entered." << endl;
+        try {
+            validateAlbumPath(albumPath);
+            break;
+        } catch(const ValidationException& e) {
+            cout << e.what() << endl;
         }
-    }while(!valid);
+    }while(true);
     albumPath = formatAlbumPath(albumPath);
     return albumPath;
 }
 
 //57
-bool validateAlbumTitle(const std::string& albumTitle)
+void validateAlbumTitle(const std::string& albumTitle)
 {
     if (albumTitle.empty()){
-        return false;
+        throw ValidationException("Album title cannot be empty!");
     }else if (albumTitle[0] == ' '){
-        return false;
+        throw ValidationException("Album title cannot start with a space!");
     }else{
         for(char c : albumTitle){
             if(!(c == ' ' || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z'))){
-                return false;
+                throw ValidationException("Album title contains invalid characters!");
             }
         }
     }
-    return true;
 }
 
 //58
@@ -1359,15 +1367,15 @@ std::string formatAlbumTitle(std::string albumTitle)
 }
 
 //59
-bool validateAlbumFormat(const std::string& albumFormat)
+void validateAlbumFormat(const std::string& albumFormat)
 {
     std::string lowerFormat = albumFormat;
     for(char& c : lowerFormat) c = tolower(c);
     std::vector<std::string> validFormats = {"m4a", "flac", "mp3", "mp4", "wav", "wma", "aac", "dsd", "alac", "aiff"};
     for(const auto& fmt : validFormats){
-        if(lowerFormat == fmt) return true;
+        if(lowerFormat == fmt) return;
     }
-    return false;
+    throw ValidationException("Invalid album record format!");
 }
 
 //60
@@ -1381,27 +1389,26 @@ std::string formatAlbumFormat(std::string albumFormat)
 }
 
 //61
-bool validateAlbumDate(unsigned int day, unsigned int month, unsigned int year)
+void validateAlbumDate(unsigned int day, unsigned int month, unsigned int year)
 {
     if (month>12 ||day<1 || month<1 || year<0 )
-        return false;
+        throw ValidationException("Invalid date: month/day/year out of range!");
     if(month==1 || month==3 || month==5 || month==7 || month==8 || month==10 || month==12){
         if (day>31)
-            return false;
+            throw ValidationException("Invalid date: day exceeds 31 for the month!");
     }else if (day>30)
-        return false;
+        throw ValidationException("Invalid date: day exceeds 30 for the month!");
     if(month==2)
     {
         if (year%4==0){
             if((year%100==0) && (year%400!=0)){  //Leap Year
                 if(day>28)
-                    return false;
+                    throw ValidationException("Invalid date: February has only 28 days in this year!");
             }else if (day>29)
-                return false;
+                throw ValidationException("Invalid date: February has only 29 days in leap year!");
         }else if (day>28)
-                return false;
+                throw ValidationException("Invalid date: February has only 28 days!");
     }
-    return true;
 }
 
 //62
@@ -1416,22 +1423,21 @@ std::string formatAlbumDate(unsigned int day, unsigned int month, unsigned int y
 }
 
 //63
-bool validateAlbumPath(const std::string& albumPath)
+void validateAlbumPath(const std::string& albumPath)
 {
     int slash = 0;
     if (albumPath.empty()){
-        return false;
+        throw ValidationException("Album path cannot be empty!");
     }else if (albumPath[0] == ' '){
-        return false;
+        throw ValidationException("Album path cannot start with a space!");
     }else{
         for(char c : albumPath){
             if (c == '\\')
                 slash++;
         }
         if(slash < 1)
-            return false;
+            throw ValidationException("Album path must contain at least one backslash!");
     }
-    return true;
 }
 
 //64
