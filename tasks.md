@@ -26,8 +26,8 @@ Transform the existing C++ console-based Album Management System into a modern, 
 - **3.1** ✅ Add export functionality (CSV, JSON formats)
 - **3.2** ✅ Implement advanced search with multiple criteria and filters
 - **3.3** ✅ Add statistics and reporting features
-- **3.5** Implement data backup and restore functionality
-- **3.6** Add album cover image support (file paths and metadata)
+- **3.5** ✅ Implement data backup and restore functionality
+
 
 ### 4. User Interface Improvements
 - **4.1** ✅ Create a cross-platform console interface (remove Windows-specific code)

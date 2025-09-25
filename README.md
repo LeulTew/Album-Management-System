@@ -1,114 +1,222 @@
-# Album Management System
+# Album Management System 🎵
 
-A modernized C++ console application for managing music albums and artists, featuring advanced search, statistics, and data export capabilities.
+<p align="center">
+  <em>A feature-rich, modern C++ console experience for curating artists, albums, and archival metadata with zero compromise on data integrity.</em>
+</p>
 
-## Features
+<p align="center">
+  <a href="https://img.shields.io/badge/C%2B%2B-17-blue.svg"><img src="https://img.shields.io/badge/C%2B%2B-17-blue.svg" alt="C++17" /></a>
+  <a href="https://img.shields.io/badge/license-MIT-success.svg"><img src="https://img.shields.io/badge/license-MIT-success.svg" alt="MIT license" /></a>
+  <a href="https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS-6f42c1.svg"><img src="https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS-6f42c1.svg" alt="Platforms" /></a>
+  <a href="tasks.md"><img src="https://img.shields.io/badge/status-actively%20developed-orange.svg" alt="Active Development" /></a>
+</p>
 
-- **Artist Management**: Add, edit, delete, and search artists
-- **Album Management**: Add, edit, delete, and search albums
-- **Advanced Search**: Search by title prefix or date range
-- **Statistics**: View album counts per artist
-- **CSV Export**: Export artists and albums to CSV files
-- **Modern C++**: Uses std::string, std::vector, and other modern features
+The Album Management System started life as a semester project and has grown into a showcase of modern C++ craftsmanship. It blends a fast, undo/redo-enabled command core with binary persistence, logging, CSV exports, and rich validation so you can manage a music archive with confidence.
 
-## Prerequisites
+---
 
-- C++11 compatible compiler (GCC, Clang, MSVC)
-- CodeBlocks IDE (recommended for Windows)
+## Table of Contents
 
-## Building
+1. [Highlights](#-highlights)
+2. [Quick Start](#-quick-start)
+3. [Guided Tour](#-guided-tour)
+4. [Architecture Overview](#-architecture-overview)
+5. [Data & Tooling](#-data--tooling)
+6. [Quality Playbook](#-quality-playbook)
+7. [Contribution Guide](#-contribution-guide)
+8. [Roadmap](#-roadmap)
+9. [License](#-license)
 
-### Using CodeBlocks
-1. Open `Album Management System 1.0.cbp` in CodeBlocks
-2. Click Build → Build
-3. The executable will be created in the `bin/Debug/` or `bin/Release/` directory
+---
 
-### Using Command Line (GCC)
+## ✨ Highlights
+
+- **Full-stack artist & album management** – curate artists, attach rich album records (format, published date, asset path), and keep both views in sync.
+- **Command-driven undo/redo** – every mutation is wrapped in the Command pattern, enabling instant rollback/redo with contextual descriptions.
+- **Binary persistence + CSV export** – keep blazing-fast `.bin` stores for runtime and export to human-friendly CSV when you need to share data.
+- **Snapshot backups & restores** – capture timestamped `.bin` snapshots and rewind the entire catalog safely.
+- **Advanced search & analytics** – prefix search on IDs/names/titles, filter by date, and inspect collection statistics in seconds.
+- **Robust validation pipeline** – guard rails on every input (names, phones, emails, formats, dates, paths) to keep your catalog clean.
+- **Extensive logging** – the `album_system.log` trace captures every significant operation for audits and debugging sessions.
+
+---
+
+## 🚀 Quick Start
+
+> **Prerequisites**
+>
+> - CMake ≥ 3.10
+> - A C++17-compatible compiler (GCC, Clang, or MSVC)
+> - Git (for version control and optional hooks)
+
+### 1. Clone the repository
+
 ```bash
-g++ -std=c++11 main.cpp manager.cpp -o album_management.exe
+git clone https://github.com/LeulTew/Album-Management-System.git
+cd Album-Management-System
 ```
 
-## Running
+### 2. Build the Application
 
-Execute the compiled binary:
-```bash
-./album_management.exe
-```
+#### Windows (Primary: Code::Blocks IDE)
 
-## Testing
+This project is developed using Code::Blocks on Windows for its integrated development environment and ease of use.
 
-### Automated Tests
-Run the PowerShell test suite:
+1. Open `Album Management System 1.0.cbp` in Code::Blocks
+2. Select **Build → Build** (or press Ctrl+F9)
+3. The executable will be generated in `bin/Debug/` or `bin/Release/`
+
+#### Alternative: CMake Build System (Cross-Platform)
+
+For advanced users or other platforms:
+
+##### Windows (PowerShell with MinGW or Visual Studio Build Tools)
+
 ```powershell
-.\test_suite.ps1
+cmake -S . -B build -G "MinGW Makefiles"
+cmake --build build --config Release
 ```
 
-Or use the batch file:
-```cmd
-run_tests.bat
+##### Linux / macOS
+
+```bash
+cmake -S . -B build
+cmake --build build --config Release
 ```
 
-### Manual Testing
-1. **Add an Artist**:
-   - Choose option 1 (Manage Artist)
-   - Choose option 2 (Artist Editor)
-   - Choose option 1 (Add Artist)
-   - Enter artist details
+The executable is placed at `build/album_management` (or `build/Release/album_management.exe` on Windows).
 
-2. **Add an Album**:
-   - Choose option 2 (Manage Album)
-   - Choose option 2 (Album Editor)
-   - Choose option 1 (Add Album)
-   - Select an artist and enter album details
+### 4. Seed sample data
 
-3. **Test Export**:
-   - Go to Artist Manager → Option 3 (Export to CSV)
-   - Go to Album Manager → Option 3 (Export to CSV)
-   - Check for `artists.csv` and `albums.csv` files
+Populate realistic demo records before exploring the UI:
 
-4. **Test Search**:
-   - Go to Album Manager → Album Viewer → Advanced Search
-   - Try title search or date range search
-
-5. **View Statistics**:
-   - Choose option 3 (Statistics) from main menu
-
-## Project Structure
-
-```
-Album Management System/
-├── main.cpp              # Main entry point
-├── manager.h             # Header file with declarations
-├── manager.cpp           # Implementation of all functions
-├── tasks.md              # Project development tasks
-├── .gitignore           # Git ignore file
-├── test_suite.ps1       # Automated test suite
-├── run_tests.bat        # Batch test runner
-└── Group Members.txt    # Project team information
+```powershell
+.\temp_populate.exe      # Pre-built helper (or build from temp_populate.cpp)
 ```
 
-## Modernization Changes
+This creates `Artist.bin` and `Album.bin` with ready-to-browse content.
 
-This project has been modernized from legacy C++ to modern standards:
+---
 
-- **Memory Management**: Replaced raw pointers and C-strings with smart pointers and std::string
-- **Containers**: Converted arrays to std::vector
-- **File I/O**: Maintained binary file compatibility
-- **Code Structure**: Improved function organization and error handling
-- **Features**: Added export, advanced search, and statistics
+## 🧭 Guided Tour
 
-## Version Control
+Launch the executable to enter the colorized console dashboard:
 
-The project uses Git for version control. All changes are committed with descriptive messages.
+```text
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+            ALBUM MANAGEMENT
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+ 1 ▸ Artist Manager
+ 2 ▸ Album Manager
+ 3 ▸ Backup & Restore
+ 4 ▸ Statistics
+ 5 ▸ Undo (context aware)
+ 6 ▸ Redo (context aware)
+ 7 ▸ Exit (with final stats)
 
-## Contributing
+Choice: ▷
+```
 
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Run tests
-5. Submit a pull request
+- **Artist Manager** – switch between viewer/editor modes, perform prefix search, and use undo/redo for safe experimentation.
+- **Album Manager** – ingest albums per artist, track format + release date + asset path, and export curated lists.
+- **Backup & Restore** – capture point-in-time snapshots and roll the entire archive backward or forward in seconds.
+- **Statistics** – instant overview of collection size and album distribution per artist; exiting from the main menu presents a final summary automatically.
 
-## License
+Undo/redo shortcuts surface in menus once actions are available, giving you confidence with every change.
 
-This project is for educational purposes.
+---
+
+## 🧱 Architecture Overview
+
+```mermaid
+flowchart LR
+    subgraph Input
+        UI[Console Menus & Views]
+    end
+    subgraph Core
+        CM[CommandManager]
+        AM[Artist Manager]
+        ALM[Album Manager]
+        VAL[Validation Layer]
+    end
+    subgraph Persistence
+        ART[FileArtistRepository]
+        ALB[FileAlbumRepository]
+        BIN[(Artist.bin / Album.bin)]
+        CSV[CSV Export]
+        LOG[Logger]
+    end
+
+    UI --> CM
+    CM --> AM
+    CM --> ALM
+    AM --> ART
+    ALM --> ALB
+    ART --> BIN
+    ALB --> BIN
+    AM --> CSV
+    ALM --> CSV
+    CM --> LOG
+    VAL --> CM
+```
+
+- **Command Manager** – centralizes redo/undo stacks with descriptive history strings.
+- **Managers + Views** – orchestrate user flows, keep indices ordered, and interact with binary files via repositories.
+- **Repository Layer** – `FileArtistRepository` and `FileAlbumRepository` abstract persistence so future backends (SQLite, REST) can plug in.
+- **Validation Layer** – dedicated validators ensure consistent casing, safe email/phone formats, and normalized paths.
+- **Logging** – every important event is timestamped in `album_system.log` for traceability.
+
+---
+
+## 🗄️ Data & Tooling
+
+| Artifact | Purpose |
+| --- | --- |
+| `Artist.bin` / `Album.bin` | Primary binary stores using fixed-width records for lightning-fast random access. |
+| `album_system.log` | Chronological activity log (initialization, CRUD operations, repository failures). |
+| `backups/` | Timestamped snapshots plus `index.csv` registry powering the restore menu. |
+| `test_tasks.md` | Black-box manual test matrix capturing expected behaviors. |
+| `temp_populate.cpp` & `temp_populate.exe` | Utility to scaffold sample data during development or demos. |
+| `test_suite.ps1` / `run_tests.bat` | Lightweight smoke checks verifying builds, files, and repository state on Windows. |
+
+Exports land alongside the executable as `artists.csv` and `albums.csv`, preserving UTF-8 formatting for spreadsheets.
+
+---
+
+## 🛡️ Quality Playbook
+
+- **Validation-first mindset** – dedicated `validate*` helpers reject malformed names, emails, phone numbers, record formats, dates, and paths before they ever hit disk.
+- **Logging & observability** – the singleton `Logger` tracks command execution, repository fallbacks, and IO anomalies.
+- **Testing** – use `test_suite.ps1` or `run_tests.bat` for scripted regression checks; more granular Google Test suites are being introduced (see [Roadmap](#-roadmap)).
+- **Manual QA** – follow `test_tasks.md` for exhaustive scenario coverage (searches, exports, statistics, persistence checks).
+
+---
+
+## 🤝 Contribution Guide
+
+1. Fork the repository and sync with `master`.
+2. Create a feature branch (`git checkout -b feature/my-awesome-improvement`).
+3. Build with CMake and run the smoke suite.
+4. Open a pull request detailing the change, tests, and any screenshots/logs.
+
+> 💡 Tip: respect the undo/redo and repository abstractions when extending features so you inherit consistent behavior for free.
+
+---
+
+## 🛣️ Roadmap
+
+The live improvement tracker lives in [`tasks.md`](tasks.md). Upcoming priorities include:
+
+- Progress indicators for long-running file operations.
+- Google Test integration plus file I/O integration harnesses.
+- API & developer docs powered by Doxygen.
+- GitHub Actions CI/CD pipeline and Docker packaging.
+- Deep-dive hardening: sanitization, concurrency safety, IO buffering, checksums.
+
+Join the journey—each milestone is engineered to level up this system toward a production-ready archival tool.
+
+---
+
+## 📄 License
+
+Released under the [MIT License](LICENSE). Build something extraordinary with it.

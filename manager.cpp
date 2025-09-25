@@ -11,6 +11,13 @@
 #include <stack>
 #include <cctype>
 #include <cstdio>
+#include <sstream>
+#include <chrono>
+#include <cerrno>
+#include <sys/stat.h>
+#ifdef _WIN32
+#include <direct.h>
+#endif
 #include "manager.h"
 
 using namespace std;
@@ -97,6 +104,346 @@ public:
 };
 
 static CommandManager commandManager;
+
+namespace {
+#ifdef _WIN32
+const char PATH_SEPARATOR = '\\';
+#else
+const char PATH_SEPARATOR = '/';
+#endif
+
+struct BackupEntry {
+    std::string timestamp;
+    std::string artistFile;
+    std::string albumFile;
+};
+
+std::string joinPath(const std::string& dir, const std::string& file) {
+    if (dir.empty()) {
+        return file;
+    }
+    if (dir.back() == '/' || dir.back() == '\\') {
+        return dir + file;
+    }
+    return dir + PATH_SEPARATOR + file;
+}
+
+bool ensureDirectoryExists(const std::string& dir) {
+#ifdef _WIN32
+    if (_mkdir(dir.c_str()) == 0) {
+        return true;
+    }
+#else
+    if (mkdir(dir.c_str(), 0755) == 0) {
+        return true;
+    }
+#endif
+    if (errno == EEXIST) {
+        return true;
+    }
+    return false;
+}
+
+bool ensureIndexFileExists() {
+    if (!ensureDirectoryExists(backupDirectory)) {
+        return false;
+    }
+    std::ifstream check(backupIndexFile);
+    if (check.good()) {
+        return true;
+    }
+    check.close();
+    std::ofstream create(backupIndexFile, std::ios::app);
+    return create.good();
+}
+
+bool fileExists(const std::string& path) {
+    std::ifstream file(path, std::ios::binary);
+    return file.good();
+}
+
+bool copyFile(const std::string& source, const std::string& destination) {
+    std::ifstream src(source, std::ios::binary);
+    if (!src) {
+        return false;
+    }
+    std::ofstream dst(destination, std::ios::binary);
+    if (!dst) {
+        return false;
+    }
+    dst << src.rdbuf();
+    return dst.good();
+}
+
+bool copyFileOverwrite(const std::string& source, const std::string& destination) {
+    std::ifstream src(source, std::ios::binary);
+    if (!src) {
+        return false;
+    }
+    std::string tempDest = destination + ".tmp";
+    std::ofstream dst(tempDest, std::ios::binary);
+    if (!dst) {
+        return false;
+    }
+    dst << src.rdbuf();
+    if (!dst.good()) {
+        dst.close();
+        std::remove(tempDest.c_str());
+        return false;
+    }
+    dst.close();
+    src.close();
+    if (std::remove(destination.c_str()) != 0 && errno != ENOENT) {
+        std::remove(tempDest.c_str());
+        return false;
+    }
+    if (std::rename(tempDest.c_str(), destination.c_str()) != 0) {
+        std::remove(tempDest.c_str());
+        return false;
+    }
+    return true;
+}
+
+std::string makeTimestamp() {
+    auto now = std::chrono::system_clock::now();
+    std::time_t tt = std::chrono::system_clock::to_time_t(now);
+    std::tm tm{};
+#ifdef _WIN32
+    localtime_s(&tm, &tt);
+#else
+    localtime_r(&tt, &tm);
+#endif
+    std::ostringstream oss;
+    oss << std::put_time(&tm, "%Y%m%d_%H%M%S");
+    return oss.str();
+}
+
+bool appendBackupEntry(const BackupEntry& entry) {
+    if (!ensureIndexFileExists()) {
+        return false;
+    }
+    std::ofstream indexFile(backupIndexFile, std::ios::app);
+    if (!indexFile) {
+        return false;
+    }
+    indexFile << entry.timestamp << ',' << entry.artistFile << ',' << entry.albumFile << '\n';
+    return indexFile.good();
+}
+
+std::vector<BackupEntry> loadBackupEntries() {
+    std::vector<BackupEntry> entries;
+    std::ifstream indexFile(backupIndexFile);
+    if (!indexFile) {
+        return entries;
+    }
+    std::string line;
+    while (std::getline(indexFile, line)) {
+        if (line.empty()) {
+            continue;
+        }
+        std::stringstream ss(line);
+        BackupEntry entry;
+        if (!std::getline(ss, entry.timestamp, ',')) {
+            continue;
+        }
+        if (!std::getline(ss, entry.artistFile, ',')) {
+            continue;
+        }
+        if (!std::getline(ss, entry.albumFile, ',')) {
+            continue;
+        }
+        entries.push_back(entry);
+    }
+    std::sort(entries.begin(), entries.end(), [](const BackupEntry& a, const BackupEntry& b) {
+        return a.timestamp > b.timestamp;
+    });
+    return entries;
+}
+
+void displayBackupEntries(const std::vector<BackupEntry>& entries) {
+    cout << "\nAvailable backups: \n";
+    cout << left << setw(6) << "[#]" << setw(25) << "Timestamp" << "Snapshot Files" << endl;
+    cout << setw(6) << "---" << setw(25) << "-----------------------" << "---------------------------------------" << endl;
+    for (size_t i = 0; i < entries.size(); ++i) {
+        cout << setw(6) << (i + 1)
+             << setw(25) << entries[i].timestamp
+             << entries[i].artistFile << " | " << entries[i].albumFile << endl;
+    }
+    cout << endl;
+}
+
+} // namespace
+
+static bool createBackupSnapshot(std::fstream& ArtFile, std::fstream& AlbFile) {
+    ArtFile.flush();
+    AlbFile.flush();
+    ArtFile.clear();
+    AlbFile.clear();
+
+    std::string timestamp = makeTimestamp();
+    std::string artistFileName = "Artist_" + timestamp + ".bin";
+    std::string albumFileName = "Album_" + timestamp + ".bin";
+    std::string artistBackupPath = joinPath(backupDirectory, artistFileName);
+    std::string albumBackupPath = joinPath(backupDirectory, albumFileName);
+
+    if (!ensureIndexFileExists()) {
+        cout << "Failed to prepare backup directory." << endl;
+        Logger::getInstance()->log("Backup failed: unable to prepare directory");
+        system("pause");
+        return false;
+    }
+
+    if (!fileExists(artistFilePath) || !fileExists(albumFilePath)) {
+        cout << "Cannot create backup: source data files missing." << endl;
+        Logger::getInstance()->log("Backup failed: source files missing");
+        system("pause");
+        return false;
+    }
+
+    if (!copyFile(artistFilePath, artistBackupPath)) {
+        cout << "Failed to backup artist data." << endl;
+        Logger::getInstance()->log("Backup failed: unable to copy artist file");
+        system("pause");
+        return false;
+    }
+
+    if (!copyFile(albumFilePath, albumBackupPath)) {
+        std::remove(artistBackupPath.c_str());
+        cout << "Failed to backup album data." << endl;
+        Logger::getInstance()->log("Backup failed: unable to copy album file");
+        system("pause");
+        return false;
+    }
+
+    BackupEntry entry{timestamp, artistFileName, albumFileName};
+    if (!appendBackupEntry(entry)) {
+        cout << "Backup created, but failed to update index." << endl;
+        Logger::getInstance()->log("Backup warning: unable to append index entry");
+    } else {
+        Logger::getInstance()->log("Backup created: " + timestamp);
+    }
+
+    cout << "Backup snapshot saved as:\n  " << artistBackupPath << "\n  " << albumBackupPath << endl;
+    system("pause");
+    return true;
+}
+
+static bool restoreFromBackup(std::fstream& ArtFile, std::fstream& AlbFile, artistList& artist, albumList& album, indexSet& delArtArray, indexSet& delAlbArray) {
+    auto entries = loadBackupEntries();
+    if (entries.empty()) {
+        cout << "No backups found. Create one first." << endl;
+        system("pause");
+        return false;
+    }
+
+    displayBackupEntries(entries);
+    int selection = -1;
+    while (true) {
+        cout << "Select backup to restore (0 to cancel): ";
+        if (!(cin >> selection)) {
+            cin.clear();
+            cin.ignore(INT_MAX, '\n');
+            cout << "Invalid input. Please enter a number." << endl;
+            continue;
+        }
+        cin.ignore(INT_MAX, '\n');
+        if (selection == 0) {
+            cout << "Restore cancelled." << endl;
+            system("pause");
+            return false;
+        }
+        if (selection < 1 || selection > static_cast<int>(entries.size())) {
+            cout << "Invalid choice. Try again." << endl;
+            continue;
+        }
+        break;
+    }
+
+    const BackupEntry& chosen = entries[selection - 1];
+    std::string artistBackupPath = joinPath(backupDirectory, chosen.artistFile);
+    std::string albumBackupPath = joinPath(backupDirectory, chosen.albumFile);
+
+    if (!fileExists(artistBackupPath) || !fileExists(albumBackupPath)) {
+        cout << "Backup files missing on disk. Operation aborted." << endl;
+        Logger::getInstance()->log("Restore failed: missing backup files for " + chosen.timestamp);
+        system("pause");
+        return false;
+    }
+
+    char confirm;
+    cout << "Restoring will overwrite current data files. Continue? (Y/N): ";
+    if (!(cin >> confirm)) {
+        cin.clear();
+        cin.ignore(INT_MAX, '\n');
+        cout << "Restore cancelled." << endl;
+        system("pause");
+        return false;
+    }
+    cin.ignore(INT_MAX, '\n');
+    if (confirm != 'y' && confirm != 'Y') {
+        cout << "Restore cancelled." << endl;
+        system("pause");
+        return false;
+    }
+
+    ArtFile.flush();
+    AlbFile.flush();
+    ArtFile.close();
+    AlbFile.close();
+
+    if (!copyFileOverwrite(artistBackupPath, artistFilePath) || !copyFileOverwrite(albumBackupPath, albumFilePath)) {
+        cout << "Failed to restore backup." << endl;
+        Logger::getInstance()->log("Restore failed while copying backup snapshot " + chosen.timestamp);
+        try {
+            openFile(ArtFile, artistFilePath);
+            openFile(AlbFile, albumFilePath);
+        } catch (...) {
+            // Ignore: openFile already reports errors elsewhere.
+        }
+        system("pause");
+        return false;
+    }
+
+    artist.artList.clear();
+    album.albList.clear();
+    delArtArray.indexes.clear();
+    delAlbArray.indexes.clear();
+    lastArtistID = 999;
+    lastAlbumID = 1999;
+
+    if (!loadArtist(ArtFile, artist, delArtArray) || !loadAlbum(AlbFile, album, delAlbArray)) {
+        cout << "Backup restored, but failed to reload data into memory." << endl;
+        Logger::getInstance()->log("Restore warning: reload failed for snapshot " + chosen.timestamp);
+        system("pause");
+        return false;
+    }
+
+    commandManager.clear();
+    Logger::getInstance()->log("Restore completed from snapshot " + chosen.timestamp);
+    cout << "Restore completed successfully." << endl;
+    system("pause");
+    return true;
+}
+
+void backupAndRestoreMenu(std::fstream& ArtFile, std::fstream& AlbFile, artistList& artist, albumList& album, indexSet& delArtArray, indexSet& delAlbArray) {
+    bool exitMenu = false;
+    do {
+        int choice = MenuView::backupMenu();
+        switch (choice) {
+            case 1:
+                createBackupSnapshot(ArtFile, AlbFile);
+                break;
+            case 2:
+                restoreFromBackup(ArtFile, AlbFile, artist, album, delArtArray, delAlbArray);
+                break;
+            case 3:
+                exitMenu = true;
+                break;
+            default:
+                break;
+        }
+    } while (!exitMenu);
+}
 
 bool undoLastAction() {
     return commandManager.undo();
@@ -593,10 +940,14 @@ void mainH(fstream & ArtFile, fstream & AlbFile, artistList & artist, albumList 
                 exit = albumManager(ArtFile,AlbFile,artist,album,result,delArtArray,delAlbArray);
                 break;
             case 3:
+                backupAndRestoreMenu(ArtFile, AlbFile, artist, album, delArtArray, delAlbArray);
+                exit = false;
+                break;
+            case 4:
                 displayStatistics(artist, album);
                 exit = false;
                 break;
-            case 4: {
+            case 5: {
                 std::string desc = getNextUndoDescription();
                 if (undoLastAction()) {
                     cout << "Undid: " << (desc.empty() ? "last action" : desc) << endl;
@@ -607,7 +958,7 @@ void mainH(fstream & ArtFile, fstream & AlbFile, artistList & artist, albumList 
                 exit = false;
                 break;
             }
-            case 5: {
+            case 6: {
                 std::string desc = getNextRedoDescription();
                 if (redoLastAction()) {
                     cout << "Redid: " << (desc.empty() ? "last action" : desc) << endl;
@@ -618,7 +969,7 @@ void mainH(fstream & ArtFile, fstream & AlbFile, artistList & artist, albumList 
                 exit = false;
                 break;
             }
-            case 6:
+            case 7:
                 displayStatistics(artist, album);
                 exit = true;
                 break;
@@ -632,32 +983,7 @@ void mainH(fstream & ArtFile, fstream & AlbFile, artistList & artist, albumList 
 //10
 int mainMenu()
 {
-    int c;
-    do{
-        system("COLOR 3F");
-        system("cls");
-        cout<<"\n";
-        cout<<setfill('~')<<setw(80)<<'~';
-        cout<<"\n\n";
-        cout<<"                             ALBUM MANAGEMENT                              \n";
-        cout<<"\n                                 *MENU*               ";
-        cout<<"\n\n                       Enter  1 :  >> Manage Artist                           ";
-        cout<<"\n\n                       Enter  2 :  >> Manage Album                            ";
-        cout<<"\n\n                       Enter  3 :  >> Statistics                              ";
-        cout<<"\n\n                       Enter  4 :  >> EXIT.                              \n\n ";
-        cout<<setw(80)<<'~'<<setfill(' ');
-        cout<<"\n Choice:    ";
-        cin>>c;
-        cin.clear();
-        cin.ignore(INT_MAX,'\n');
-        if (c>4 || c<1){
-            cout<<"Wrong Choice!";
-            cout<<endl<<endl;
-            system ("pause");
-            system ("cls");
-        }
-    }while(c>4 || c<1);
-    return c;
+    return MenuView::mainMenu();
 }
 
 void displayStatistics(const artistList& artist, const albumList& album)
@@ -3686,23 +4012,48 @@ int MenuView::mainMenu() {
         cout<<"\n                                 *ALBUM MANAGEMENT SYSTEM*               ";
         cout<<"\n\n                       Enter  1 :  >> ARTIST MANAGER                           ";
         cout<<"\n\n                       Enter  2 :  >> ALBUM MANAGER                            ";
-        cout<<"\n\n                       Enter  3 :  >> STATISTICS                              ";
+        cout<<"\n\n                       Enter  3 :  >> BACKUP & RESTORE                            ";
         std::string undoDesc = getNextUndoDescription();
         std::string redoDesc = getNextRedoDescription();
-        cout<<"\n\n                       Enter  4 :  >> UNDO " << (undoDesc.empty() ? "(none)" : "- " + undoDesc);
-        cout<<"\n\n                       Enter  5 :  >> REDO " << (redoDesc.empty() ? "(none)" : "- " + redoDesc);
-        cout<<"\n\n                       Enter  6 :  >> EXIT.                              \n\n ";
+        cout<<"\n\n                       Enter  4 :  >> STATISTICS                              ";
+        cout<<"\n\n                       Enter  5 :  >> UNDO " << (undoDesc.empty() ? "(none)" : "- " + undoDesc);
+        cout<<"\n\n                       Enter  6 :  >> REDO " << (redoDesc.empty() ? "(none)" : "- " + redoDesc);
+        cout<<"\n\n                       Enter  7 :  >> EXIT.                              \n\n ";
         cout<<"\n choice:    ";
         cin>>c;
         cin.clear();
         cin.ignore(INT_MAX,'\n');
-        if (c>6 || c<1){
+        if (c>7 || c<1){
             cout<<"Wrong Choice!";
             cout<<endl<<endl;
             system ("pause");
             system ("cls");
         }
-    }while(c>6 || c<1);
+    }while(c>7 || c<1);
+    return c;
+}
+
+int MenuView::backupMenu() {
+    int c;
+    do{
+        system("COLOR 1F");
+        system("cls");
+        cout<<"\n\n";
+        cout<<"\n                              *BACKUP & RESTORE MENU*               ";
+        cout<<"\n\n                       Enter  1 :  >> Create backup snapshot                ";
+        cout<<"\n\n                       Enter  2 :  >> Restore from snapshot                 ";
+        cout<<"\n\n                       Enter  3 :  >> Go Back                               \n\n ";
+        cout<<"\n choice:    ";
+        cin>>c;
+        cin.clear();
+        cin.ignore(INT_MAX,'\n');
+        if (c>3 || c<1){
+            cout<<"Wrong Choice!";
+            cout<<endl<<endl;
+            system ("pause");
+            system ("cls");
+        }
+    }while(c>3 || c<1);
     return c;
 }
 

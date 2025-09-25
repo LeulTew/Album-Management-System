@@ -17,6 +17,8 @@ const int DEFAULT_SIZE = 10;
 extern int lastArtistID, lastAlbumID;
 const std::string artistFilePath = "Artist.bin";
 const std::string albumFilePath = "Album.bin";
+const std::string backupDirectory = "backups";
+const std::string backupIndexFile = "backups/index.csv";
 
 // Custom Exception Classes
 class AlbumManagementException : public std::exception {
@@ -221,6 +223,7 @@ public:
     static int viewAlbumMenu();
     static int editArtistMenu();
     static int editAlbumMenu();
+    static int backupMenu();
 };
 
 //Prototype Declarations
@@ -271,6 +274,8 @@ void displayOneArtist(std::fstream& ArtFile, const artistList& artist, int idx);
 void deleteArtist(std::fstream& ArtFile, std::fstream& AlbFile, artistList& artist, albumList& album, indexSet& result, indexSet& delArtArray, indexSet& delAlbArray);
 void removeArtist(std::fstream& ArtFile, std::fstream& AlbFile, artistList& artist, albumList& album, indexSet& delArtArray, indexSet& delAlbArray, int idx);
 void removeArtistAllAlbums(std::fstream& ArtFile, std::fstream& AlbFile, const artistList& artist, albumList& album, indexSet& delAlbArray, int i);
+
+void backupAndRestoreMenu(std::fstream& ArtFile, std::fstream& AlbFile, artistList& artist, albumList& album, indexSet& delArtArray, indexSet& delAlbArray);
 
 bool albumManager(std::fstream& ArtFile, std::fstream& AlbFile, artistList& artist, albumList& album, indexSet& result, indexSet& delArtArray, indexSet& delAlbArray);
 int albumMenu();
