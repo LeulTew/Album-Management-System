@@ -1,9 +1,21 @@
+/**
+ * @file main.cpp
+ * @brief Main entry point for the Album Management System.
+ *
+ * This file contains the main function that initializes the application,
+ * sets up repositories and managers, loads data, and starts the main menu loop.
+ */
+
 #include <iostream>
 using namespace std;
 #include <conio.h>
 #include <fstream>
 #include "manager.h"
 
+/**
+ * @brief Main entry point of the application.
+ * @return Exit status (0 for success).
+ */
 int main()
 {
     // Create repository instances

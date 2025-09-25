@@ -24,3 +24,23 @@ endif()
 
 # Optional: Add compile options
 target_compile_options(album_management PRIVATE -Wall -Wextra)
+
+# Google Test setup
+include(FetchContent)
+FetchContent_Declare(
+  googletest
+  URL https://github.com/google/googletest/archive/03597a01ee50ed33e9dfd640b249b4be3799d395.zip
+)
+# For Windows: Prevent overriding the parent project's compiler/linker on Windows
+set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
+FetchContent_MakeAvailable(googletest)
+
+enable_testing()
+
+# Test executable
+add_executable(tests test_artist.cpp test_album.cpp test_validation.cpp test_repository.cpp test_integration.cpp)
+target_link_libraries(tests gtest_main)
+target_include_directories(tests PRIVATE .)
+
+include(GoogleTest)
+gtest_discover_tests(tests)
