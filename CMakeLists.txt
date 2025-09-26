@@ -1,5 +1,7 @@
 cmake_minimum_required(VERSION 3.10)
-project(AlbumManagementSystem)
+project(AlbumManagementSystem VERSION 1.0.0)
+
+configure_file(version.h.in version.h @ONLY)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -8,7 +10,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 add_executable(album_management main.cpp manager.cpp)
 
 # Include current directory for headers
-target_include_directories(album_management PRIVATE .)
+target_include_directories(album_management PRIVATE . ${CMAKE_CURRENT_BINARY_DIR})
 
 # Link filesystem library for C++17 filesystem support
 if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
@@ -40,7 +42,10 @@ enable_testing()
 # Test executable
 add_executable(tests test_artist.cpp test_album.cpp test_validation.cpp test_repository.cpp test_integration.cpp)
 target_link_libraries(tests gtest_main)
-target_include_directories(tests PRIVATE .)
+target_include_directories(tests PRIVATE . ${CMAKE_CURRENT_BINARY_DIR})
+
+target_compile_definitions(album_management PRIVATE APP_VERSION="${PROJECT_VERSION}")
+target_compile_definitions(tests PRIVATE APP_VERSION="${PROJECT_VERSION}")
 
 include(GoogleTest)
 gtest_discover_tests(tests)

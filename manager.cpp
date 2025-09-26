@@ -23,17 +23,164 @@
 #include <sstream>
 #include <chrono>
 #include <cerrno>
+#include <cstdint>
+#include <array>
+#include <mutex>
 #include <sys/stat.h>
 #ifdef _WIN32
 #include <direct.h>
 #include <Windows.h>
 #endif
 #include "manager.h"
+#include "version.h"
 
 using namespace std;
 
 int lastArtistID = 999, lastAlbumID = 1999;
 Logger* Logger::instance = nullptr;
+
+const ConfigValue artistFilePath(getArtistFilePath);
+const ConfigValue albumFilePath(getAlbumFilePath);
+const ConfigValue backupDirectory(getBackupDirectory);
+const ConfigValue backupIndexFile(getBackupIndexFile);
+
+AppConfig::AppConfig() {
+    resetToDefaults();
+}
+
+AppConfig& AppConfig::instance() {
+    static AppConfig config;
+    return config;
+}
+
+void AppConfig::resetToDefaults() {
+    values.artistFile = "Artist.bin";
+    values.albumFile = "Album.bin";
+    values.backupDirectory = "backups";
+    values.backupIndexFile = "backups/index.csv";
+    applyDerivedDefaults();
+}
+
+void AppConfig::applyDerivedDefaults() {
+    if (values.backupIndexFile.empty()) {
+        if (values.backupDirectory.empty()) {
+            values.backupIndexFile = "index.csv";
+        } else {
+            values.backupIndexFile = values.backupDirectory + "/index.csv";
+        }
+    }
+}
+
+const AppConfigSettings& AppConfig::settings() const {
+    return values;
+}
+
+std::string AppConfig::extractValue(const std::string& content, const std::string& key) {
+    const std::string search = "\"" + key + "\"";
+    auto keyPos = content.find(search);
+    if (keyPos == std::string::npos) {
+        return "";
+    }
+    auto colonPos = content.find(':', keyPos + search.size());
+    if (colonPos == std::string::npos) {
+        return "";
+    }
+    auto firstQuote = content.find('"', colonPos);
+    if (firstQuote == std::string::npos) {
+        return "";
+    }
+    auto secondQuote = content.find('"', firstQuote + 1);
+    if (secondQuote == std::string::npos) {
+        return "";
+    }
+    return content.substr(firstQuote + 1, secondQuote - firstQuote - 1);
+}
+
+void AppConfig::loadFromFile(const std::string& path) {
+    std::ifstream config(path);
+    if (!config) {
+        Logger::getInstance()->log("Configuration file not found: " + path + ", using defaults");
+        return;
+    }
+
+    std::stringstream buffer;
+    buffer << config.rdbuf();
+    std::string content = buffer.str();
+
+    auto assignIfPresent = [&](const std::string& key, std::string& target) {
+        std::string value = extractValue(content, key);
+        if (!value.empty()) {
+            target = value;
+            return true;
+        }
+        return false;
+    };
+
+    assignIfPresent("artistFile", values.artistFile);
+    assignIfPresent("albumFile", values.albumFile);
+    bool directoryUpdated = assignIfPresent("backupDirectory", values.backupDirectory);
+    bool indexUpdated = assignIfPresent("backupIndexFile", values.backupIndexFile);
+    if (directoryUpdated && !indexUpdated) {
+        values.backupIndexFile.clear();
+    }
+
+    applyDerivedDefaults();
+    Logger::getInstance()->log("Configuration loaded from " + path);
+}
+
+const std::string& getArtistFilePath() {
+    return AppConfig::instance().settings().artistFile;
+}
+
+const std::string& getAlbumFilePath() {
+    return AppConfig::instance().settings().albumFile;
+}
+
+const std::string& getBackupDirectory() {
+    return AppConfig::instance().settings().backupDirectory;
+}
+
+const std::string& getBackupIndexFile() {
+    return AppConfig::instance().settings().backupIndexFile;
+}
+
+void loadApplicationConfig(const std::string& path) {
+    AppConfig::instance().loadFromFile(path);
+}
+
+namespace {
+std::recursive_mutex g_fileMutex;
+
+void reportMemoryUsage() {
+#ifdef _WIN32
+    MEMORYSTATUSEX status{};
+    status.dwLength = sizeof(status);
+    if (GlobalMemoryStatusEx(&status)) {
+        DWORDLONG used = status.ullTotalPhys - status.ullAvailPhys;
+        Logger::getInstance()->log("Memory stats - total: " + std::to_string(status.ullTotalPhys) +
+                                   ", available: " + std::to_string(status.ullAvailPhys) +
+                                   ", used: " + std::to_string(used));
+    }
+#else
+    std::ifstream statm("/proc/self/statm");
+    long pages = 0;
+    long resident = 0;
+    if (statm >> pages >> resident) {
+        long pageSize = sysconf(_SC_PAGESIZE);
+        long usedBytes = resident * pageSize;
+        Logger::getInstance()->log("Memory stats - resident bytes: " + std::to_string(usedBytes));
+    }
+#endif
+}
+
+struct MemoryStatsReporter {
+    ~MemoryStatsReporter() {
+        reportMemoryUsage();
+    }
+};
+
+MemoryStatsReporter g_memoryReporter;
+}
 
 struct CommandAction {
     std::function<bool()> redo;
@@ -126,6 +273,8 @@ struct BackupEntry {
     std::string timestamp;
     std::string artistFile;
     std::string albumFile;
+    std::uint32_t artistChecksum = 0;
+    std::uint32_t albumChecksum = 0;
 };
 
 std::string joinPath(const std::string& dir, const std::string& file) {
@@ -138,7 +287,81 @@ std::string joinPath(const std::string& dir, const std::string& file) {
     return dir + PATH_SEPARATOR + file;
 }
 
+std::string sanitizeStringInput(const std::string& input, size_t maxLength) {
+    std::string result;
+    result.reserve(std::min(maxLength, input.size()));
+    for (char ch : input) {
+        unsigned char c = static_cast<unsigned char>(ch);
+        if (!std::isprint(c) && !std::isspace(c)) {
+            continue;
+        }
+        if (result.size() >= maxLength) {
+            break;
+        }
+        result.push_back(static_cast<char>(c));
+    }
+    auto first = result.find_first_not_of(" \t\r\n");
+    if (first == std::string::npos) {
+        return "";
+    }
+    auto last = result.find_last_not_of(" \t\r\n");
+    return result.substr(first, last - first + 1);
+}
+
+std::string sanitizeDigitInput(const std::string& input, size_t maxLength) {
+    std::string result;
+    result.reserve(std::min(maxLength, input.size()));
+    for (char ch : input) {
+        if (std::isdigit(static_cast<unsigned char>(ch))) {
+            result.push_back(ch);
+            if (result.size() >= maxLength) {
+                break;
+            }
+        }
+    }
+    return result;
+}
+
+bool bufferedCopy(std::istream& src, std::ostream& dst) {
+    std::array<char, 65536> buffer{};
+    while (src) {
+        src.read(buffer.data(), static_cast<std::streamsize>(buffer.size()));
+        std::streamsize count = src.gcount();
+        if (count <= 0) {
+            break;
+        }
+        dst.write(buffer.data(), count);
+        if (!dst) {
+            return false;
+        }
+    }
+    dst.flush();
+    return dst.good();
+}
+
+std::uint32_t computeFileChecksum(const std::string& path) {
+    std::lock_guard<std::recursive_mutex> lock(g_fileMutex);
+    std::ifstream file(path, std::ios::binary);
+    if (!file) {
+        return 0;
+    }
+    const std::uint32_t fnvOffset = 2166136261u;
+    const std::uint32_t fnvPrime = 16777619u;
+    std::uint32_t hash = fnvOffset;
+    std::array<char, 65536> buffer{};
+    while (file) {
+        file.read(buffer.data(), static_cast<std::streamsize>(buffer.size()));
+        std::streamsize count = file.gcount();
+        for (std::streamsize i = 0; i < count; ++i) {
+            hash ^= static_cast<unsigned char>(buffer[static_cast<size_t>(i)]);
+            hash *= fnvPrime;
+        }
+    }
+    return hash;
+}
+
 bool ensureDirectoryExists(const std::string& dir) {
+    std::lock_guard<std::recursive_mutex> lock(g_fileMutex);
 #ifdef _WIN32
     if (_mkdir(dir.c_str()) == 0) {
         return true;
@@ -155,6 +378,7 @@ bool ensureDirectoryExists(const std::string& dir) {
 }
 
 bool ensureIndexFileExists() {
+    std::lock_guard<std::recursive_mutex> lock(g_fileMutex);
     if (!ensureDirectoryExists(backupDirectory)) {
         return false;
     }
@@ -168,11 +392,13 @@ bool ensureIndexFileExists() {
 }
 
 bool fileExists(const std::string& path) {
+    std::lock_guard<std::recursive_mutex> lock(g_fileMutex);
     std::ifstream file(path, std::ios::binary);
     return file.good();
 }
 
 bool copyFile(const std::string& source, const std::string& destination) {
+    std::lock_guard<std::recursive_mutex> lock(g_fileMutex);
     std::ifstream src(source, std::ios::binary);
     if (!src) {
         return false;
@@ -181,11 +407,11 @@ bool copyFile(const std::string& source, const std::string& destination) {
     if (!dst) {
         return false;
     }
-    dst << src.rdbuf();
-    return dst.good();
+    return bufferedCopy(src, dst);
 }
 
 bool copyFileOverwrite(const std::string& source, const std::string& destination) {
+    std::lock_guard<std::recursive_mutex> lock(g_fileMutex);
     auto* logger = Logger::getInstance();
 
     // Verify the source exists before we begin any overwrite attempts.
@@ -215,10 +441,8 @@ bool copyFileOverwrite(const std::string& source, const std::string& destination
             logger->log("copyFileOverwrite: Failed to open destination for overwrite on attempt " +
                         std::to_string(attempt + 1) + ", errno: " + std::to_string(openErrno));
         } else {
-            dst << src.rdbuf();
-            dst.flush();
-
-            if (dst && dst.good()) {
+            errno = 0;
+            if (bufferedCopy(src, dst)) {
                 logger->log("copyFileOverwrite: Overwrote destination via truncation on attempt " + std::to_string(attempt + 1));
                 return true;
             }
@@ -248,9 +472,8 @@ bool copyFileOverwrite(const std::string& source, const std::string& destination
         return false;
     }
 
-    dst << src.rdbuf();
-    dst.flush();
-    if (!dst.good()) {
+    errno = 0;
+    if (!bufferedCopy(src, dst)) {
         dst.close();
         std::remove(tempDest.c_str());
         logger->log("copyFileOverwrite: Failed to write to temp file: " + tempDest);
@@ -316,6 +539,7 @@ std::string makeTimestamp() {
 }
 
 bool appendBackupEntry(const BackupEntry& entry) {
+    std::lock_guard<std::recursive_mutex> lock(g_fileMutex);
     if (!ensureIndexFileExists()) {
         return false;
     }
@@ -323,11 +547,16 @@ bool appendBackupEntry(const BackupEntry& entry) {
     if (!indexFile) {
         return false;
     }
-    indexFile << entry.timestamp << ',' << entry.artistFile << ',' << entry.albumFile << '\n';
+    indexFile << entry.timestamp << ','
+              << entry.artistFile << ','
+              << entry.albumFile << ','
+              << entry.artistChecksum << ','
+              << entry.albumChecksum << '\n';
     return indexFile.good();
 }
 
 std::vector<BackupEntry> loadBackupEntries() {
+    std::lock_guard<std::recursive_mutex> lock(g_fileMutex);
     std::vector<BackupEntry> entries;
     std::ifstream indexFile(backupIndexFile);
     if (!indexFile) {
@@ -349,6 +578,22 @@ std::vector<BackupEntry> loadBackupEntries() {
         if (!std::getline(ss, entry.albumFile, ',')) {
             continue;
         }
+        std::string artistChecksumStr;
+        std::string albumChecksumStr;
+        if (std::getline(ss, artistChecksumStr, ',')) {
+            try {
+                entry.artistChecksum = static_cast<std::uint32_t>(std::stoul(artistChecksumStr));
+            } catch (...) {
+                entry.artistChecksum = 0;
+            }
+            if (std::getline(ss, albumChecksumStr)) {
+                try {
+                    entry.albumChecksum = static_cast<std::uint32_t>(std::stoul(albumChecksumStr));
+                } catch (...) {
+                    entry.albumChecksum = 0;
+                }
+            }
+        }
         entries.push_back(entry);
     }
     std::sort(entries.begin(), entries.end(), [](const BackupEntry& a, const BackupEntry& b) {
@@ -359,12 +604,16 @@ std::vector<BackupEntry> loadBackupEntries() {
 
 void displayBackupEntries(const std::vector<BackupEntry>& entries) {
     cout << "\nAvailable backups: \n";
-    cout << left << setw(6) << "[#]" << setw(25) << "Timestamp" << "Snapshot Files" << endl;
-    cout << setw(6) << "---" << setw(25) << "-----------------------" << "---------------------------------------" << endl;
+    cout << left << setw(6) << "[#]" << setw(25) << "Timestamp" << setw(40) << "Snapshot Files"
+         << setw(12) << "Artist CRC" << "Album CRC" << endl;
+    cout << setw(6) << "---" << setw(25) << "-----------------------" << setw(40) << "---------------------------------------"
+         << setw(12) << "----------" << "----------" << endl;
     for (size_t i = 0; i < entries.size(); ++i) {
         cout << setw(6) << (i + 1)
              << setw(25) << entries[i].timestamp
-             << entries[i].artistFile << " | " << entries[i].albumFile << endl;
+             << setw(40) << (entries[i].artistFile + " | " + entries[i].albumFile)
+             << setw(12) << entries[i].artistChecksum
+             << entries[i].albumChecksum << endl;
     }
     cout << endl;
 }
@@ -413,12 +662,16 @@ static bool createBackupSnapshot(std::fstream& ArtFile, std::fstream& AlbFile) {
         return false;
     }
 
-    BackupEntry entry{timestamp, artistFileName, albumFileName};
+    BackupEntry entry{timestamp, artistFileName, albumFileName,
+                      computeFileChecksum(artistBackupPath),
+                      computeFileChecksum(albumBackupPath)};
     if (!appendBackupEntry(entry)) {
         cout << "Backup created, but failed to update index." << endl;
         Logger::getInstance()->log("Backup warning: unable to append index entry");
     } else {
-        Logger::getInstance()->log("Backup created: " + timestamp);
+        Logger::getInstance()->log("Backup created: " + timestamp + " artistCRC=" +
+                                   std::to_string(entry.artistChecksum) + " albumCRC=" +
+                                   std::to_string(entry.albumChecksum));
     }
 
     cout << "Backup snapshot saved as:\n  " << artistBackupPath << "\n  " << albumBackupPath << endl;
@@ -469,6 +722,20 @@ static bool restoreFromBackup(std::fstream& ArtFile, std::fstream& AlbFile, arti
         return false;
     }
 
+    auto verifyChecksum = [&](const std::string& path, std::uint32_t expected, const std::string& label) {
+        if (expected == 0) {
+            return true;
+        }
+        std::uint32_t actual = computeFileChecksum(path);
+        if (actual != expected) {
+            cout << label << " checksum mismatch. Expected " << expected << " but found " << actual << "." << endl;
+            Logger::getInstance()->log(label + " checksum mismatch for snapshot " + chosen.timestamp);
+            system("pause");
+            return false;
+        }
+        return true;
+    };
+
     char confirm;
     cout << "Restoring will overwrite current data files. Continue? (Y/N): ";
     if (!(cin >> confirm)) {
@@ -482,6 +749,11 @@ static bool restoreFromBackup(std::fstream& ArtFile, std::fstream& AlbFile, arti
     if (confirm != 'y' && confirm != 'Y') {
         cout << "Restore cancelled." << endl;
         system("pause");
+        return false;
+    }
+
+    if (!verifyChecksum(artistBackupPath, chosen.artistChecksum, "Artist backup") ||
+        !verifyChecksum(albumBackupPath, chosen.albumChecksum, "Album backup")) {
         return false;
     }
 
@@ -622,6 +894,7 @@ struct AlbumRemovalState {
 };
 
 static bool ensureArtistStream(std::fstream& ArtFile) {
+    std::lock_guard<std::recursive_mutex> lock(g_fileMutex);
     if (ArtFile.is_open()) {
         return true;
     }
@@ -636,6 +909,7 @@ static bool ensureArtistStream(std::fstream& ArtFile) {
 }
 
 static bool ensureAlbumStream(std::fstream& AlbFile) {
+    std::lock_guard<std::recursive_mutex> lock(g_fileMutex);
     if (AlbFile.is_open()) {
         return true;
     }
@@ -702,6 +976,7 @@ static Album fromAlbumFile(const AlbumFile& albFile) {
 }
 
 static bool readArtistAtPosition(std::fstream& ArtFile, long pos, Artist& artist) {
+    std::lock_guard<std::recursive_mutex> lock(g_fileMutex);
     if (!ensureArtistStream(ArtFile)) {
         return false;
     }
@@ -716,6 +991,7 @@ static bool readArtistAtPosition(std::fstream& ArtFile, long pos, Artist& artist
 }
 
 static bool writeArtistAtPosition(std::fstream& ArtFile, long pos, const Artist& artist) {
+    std::lock_guard<std::recursive_mutex> lock(g_fileMutex);
     if (!ensureArtistStream(ArtFile)) {
         return false;
     }
@@ -728,6 +1004,7 @@ static bool writeArtistAtPosition(std::fstream& ArtFile, long pos, const Artist&
 }
 
 static bool appendArtistRecord(std::fstream& ArtFile, const Artist& artist, long& outPos) {
+    std::lock_guard<std::recursive_mutex> lock(g_fileMutex);
     if (!ensureArtistStream(ArtFile)) {
         return false;
     }
@@ -741,6 +1018,7 @@ static bool appendArtistRecord(std::fstream& ArtFile, const Artist& artist, long
 }
 
 static bool readAlbumAtPosition(std::fstream& AlbFile, long pos, Album& album) {
+    std::lock_guard<std::recursive_mutex> lock(g_fileMutex);
     if (!ensureAlbumStream(AlbFile)) {
         return false;
     }
@@ -755,6 +1033,7 @@ static bool readAlbumAtPosition(std::fstream& AlbFile, long pos, Album& album) {
 }
 
 static bool writeAlbumAtPosition(std::fstream& AlbFile, long pos, const Album& album) {
+    std::lock_guard<std::recursive_mutex> lock(g_fileMutex);
     if (!ensureAlbumStream(AlbFile)) {
         return false;
     }
@@ -767,6 +1046,7 @@ static bool writeAlbumAtPosition(std::fstream& AlbFile, long pos, const Album& a
 }
 
 static bool appendAlbumRecord(std::fstream& AlbFile, const Album& album, long& outPos) {
+    std::lock_guard<std::recursive_mutex> lock(g_fileMutex);
     if (!ensureAlbumStream(AlbFile)) {
         return false;
     }
@@ -820,6 +1100,7 @@ void welcome()  //2
 	cout<<"\n                          |o*o*o*o*o*o*o*o*o*o*o*o*o*o*o*o*o*o*o*o*o*o*o*o*o|     ";
 	cout<<'\n'<<setw(150)<<'~'<<setfill(' ');
 	cout<<endl<<endl;
+    cout << "\tVersion: " << ALBUM_APP_VERSION << endl << endl;
     system("pause");
 }
 
@@ -876,6 +1157,7 @@ int charArrayToInt(char *arr)
 //
 void openFile(std::fstream& fstr, const std::string& path)
 {
+    std::lock_guard<std::recursive_mutex> lock(g_fileMutex);
     cout<<'\n';
     
     // Try to open file for reading and writing
@@ -1469,6 +1751,7 @@ CommandAction createAddArtistCommand(Artist art, std::fstream& ArtFile, artistLi
         if (idx == -1) {
             return;
         }
+        std::lock_guard<std::recursive_mutex> lock(g_fileMutex);
         if (ensureArtistStream(ArtFile)) {
             ArtistFile blank = {"-1", "", 'N', "", ""};
             ArtFile.clear();
@@ -1525,6 +1808,7 @@ std::string getArtistName()
             cin.clear();
             continue;
         }
+        name = sanitizeStringInput(name, 49);
         try {
             validateName(name);
             break;
@@ -1567,6 +1851,7 @@ std::string getArtistPhone()
             cin.clear();
             continue;
         }
+        phone = sanitizeDigitInput(phone, 14);
         try {
             validatePhone(phone);
             return phone;
@@ -1584,6 +1869,7 @@ std::string getArtistEmail()
     {
         cout << "<sample@email.com> or <sample@email> \nEnter Artist email: ";
         getline(cin, email);
+        email = sanitizeStringInput(email, 49);
         try {
             validateEmail(email);
             break;
@@ -1921,6 +2207,7 @@ CommandAction createRemoveArtistCommand(ArtistRemovalState state, std::fstream& 
     CommandAction action;
     action.description = "Delete artist " + statePtr->artist.getName();
     action.redo = [&, statePtr, idx]() -> bool {
+        std::lock_guard<std::recursive_mutex> lock(g_fileMutex);
         if (!ensureArtistStream(ArtFile) || !ensureAlbumStream(AlbFile)) {
             return false;
         }
@@ -2059,32 +2346,150 @@ void removeArtistAllAlbums(std::fstream& ArtFile, std::fstream& AlbFile, const a
     delAlbArray.indexes.push_back(i);
 }
 
+namespace {
+
+void pauseAfterExport(const albumList& album) {
+    exportAlbumsToCSV(album, "albums.csv");
+    cout << endl << endl;
+    system("pause");
+}
+
+bool handleAlbumViewerChoice(int choice, std::fstream& AlbFile, const albumList& album, indexSet& result) {
+    switch (choice) {
+        case 1:
+            displayAllAlbums(AlbFile, album);
+            return true;
+        case 2: {
+            system("cls");
+            std::string target;
+            cout << "\nEnter prefix of Id of Artist: ";
+            cin >> target;
+            if (!searchAlbumByArtistId(AlbFile, album, result, target)) {
+                printError(4);
+                system("pause");
+            } else {
+                displayAlbumSearchResult(AlbFile, album, result);
+                cout << endl << endl;
+                system("pause");
+            }
+            return true;
+        }
+        case 3:
+            advancedSearchAlbums(AlbFile, album, result);
+            return true;
+        case 4:
+            return false;
+        default:
+            return true;
+    }
+}
+
+bool handleAlbumEditorChoice(int choice, std::fstream& ArtFile, std::fstream& AlbFile, const artistList& artist, albumList& album, indexSet& result, indexSet& delArtArray, indexSet& delAlbArray) {
+    switch (choice) {
+        case 1: {
+            bool success = addAlbum(ArtFile, AlbFile, artist, album, result);
+            if (success)
+                cout << "Artist Added Successfully! " << endl;
+            else
+                cout << "Artist not added. " << endl;
+            cout << endl << endl;
+            system("pause");
+            return true;
+        }
+        case 2:
+            editAlbum(ArtFile, AlbFile, artist, album, result);
+            return true;
+        case 3:
+            deleteAlbum(ArtFile, AlbFile, artist, album, result, delAlbArray);
+            return true;
+        case 4:
+            return false;
+        default:
+            return true;
+    }
+}
+
+int promptAdvancedAlbumSearchChoice() {
+    cout << "\nAdvanced Search Options:\n";
+    cout << "1. Search by Album Title\n";
+    cout << "2. Search by Date Range\n";
+    int choice = 0;
+    do {
+        cout << "Enter choice: ";
+        if (!(cin >> choice)) {
+            cin.clear();
+            cin.ignore(INT_MAX, '\n');
+            cout << "Invalid input. Please enter 1 or 2.\n";
+            choice = 0;
+            continue;
+        }
+        cin.ignore(INT_MAX, '\n');
+        if (choice != 1 && choice != 2) {
+            cout << "Invalid choice. Please enter 1 or 2.\n";
+        }
+    } while (choice != 1 && choice != 2);
+    return choice;
+}
+
+bool readDateFromInput(const std::string& prompt, unsigned int& day, unsigned int& month, unsigned int& year) {
+    cout << prompt;
+    while (!(cin >> day) || cin.get() != '/' || !(cin >> month) || cin.get() != '/' || !(cin >> year)) {
+        cin.clear();
+        cin.ignore(INT_MAX, '\n');
+        cout << "Invalid date format. Please enter in DD/MM/YYYY format: ";
+    }
+    cin.ignore(INT_MAX, '\n');
+    return true;
+}
+
+void runTitleBasedAlbumSearch(std::fstream& AlbFile, const albumList& album, indexSet& result) {
+    std::string title;
+    cout << "Enter album title prefix: ";
+    getline(cin, title);
+    if (searchAlbumByTitle(AlbFile, album, result, title)) {
+        displayAlbumSearchResult(AlbFile, album, result);
+    } else {
+        printError(4);
+    }
+}
+
+void runDateRangeAlbumSearch(std::fstream& AlbFile, const albumList& album, indexSet& result) {
+    unsigned int startDay, startMonth, startYear, endDay, endMonth, endYear;
+    readDateFromInput("Enter start date (DD/MM/YYYY): ", startDay, startMonth, startYear);
+    readDateFromInput("Enter end date (DD/MM/YYYY): ", endDay, endMonth, endYear);
+    if (searchAlbumByDateRange(AlbFile, album, result, startDay, startMonth, startYear, endDay, endMonth, endYear)) {
+        displayAlbumSearchResult(AlbFile, album, result);
+    } else {
+        printError(4);
+    }
+}
+
+} // namespace
+
 //42
 bool albumManager(fstream & ArtFile, fstream & AlbFile, artistList &artist, albumList &album, indexSet & result, indexSet & delArtArray, indexSet & delAlbArray)
 {
-    bool exit;
-    do
-    {
-        exit=false;
-        int choice=MenuView::albumMenu();
-        if (choice ==1)
-            exit=albumViewer(AlbFile,album,result);
-        if (choice ==2)
-            exit=albumEditor(ArtFile,AlbFile,artist,album,result,delArtArray,delAlbArray);
-        if (choice ==3) {
-            exportAlbumsToCSV(album, "albums.csv");
-            cout << endl << endl;
-            system("pause");
-            exit = true;
+    while (true) {
+        int choice = MenuView::albumMenu();
+        switch (choice) {
+            case 1:
+                albumViewer(AlbFile, album, result);
+                break;
+            case 2:
+                albumEditor(ArtFile, AlbFile, artist, album, result, delArtArray, delAlbArray);
+                break;
+            case 3:
+                pauseAfterExport(album);
+                break;
+            case 4:
+                return false;
+            case 5:
+                displayStatistics(artist, album);
+                return true;
+            default:
+                break;
         }
-        if (choice ==4)
-            return false;
-        if (choice ==5) {
-            displayStatistics(artist, album);
-            return true;
-        }
-    }while(exit);
-    return true;
+    }
 }
 
 //43
@@ -2118,32 +2523,12 @@ int albumMenu()
 //44
 bool albumViewer(std::fstream& AlbFile, const albumList& album, indexSet& result)
 {
-    bool exit=false;
-    do
-    {
-        int choice=MenuView::viewAlbumMenu();
-        if (choice ==1)
-            displayAllAlbums(AlbFile,album);
-        if ( choice == 2 ){
-            system("cls");
-            std::string target;
-            cout << "\nEnter prefix of Id of Artist: ";
-            cin >> target;
-            if(!searchAlbumByArtistId(AlbFile, album, result, target)){
-                printError(4);
-                system("pause");
-            }
-            else{
-                displayAlbumSearchResult(AlbFile, album, result);
-                cout << endl << endl;
-                system("pause");
-            }
+    while (true) {
+        int choice = MenuView::viewAlbumMenu();
+        if (!handleAlbumViewerChoice(choice, AlbFile, album, result)) {
+            break;
         }
-        if (choice ==3)
-            advancedSearchAlbums(AlbFile, album, result);
-        if (choice ==4)
-            exit=true;
-    }while(!exit);
+    }
     return true;
 }
 
@@ -2203,26 +2588,12 @@ void displayAlbumSearchResult(std::fstream& AlbFile, const albumList& album, con
 //49
 bool albumEditor(std::fstream& ArtFile, std::fstream& AlbFile, const artistList& artist, albumList& album, indexSet& result, indexSet& delArtArray, indexSet& delAlbArray)
 {
-    bool exit=false, success=false;
-    do
-    {
-        int choice=MenuView::editAlbumMenu();
-        if (choice ==1){
-            success=addAlbum(ArtFile,AlbFile,artist,album,result);
-            if(success)
-                cout<<"Artist Added Successfully! "<<endl;
-            else
-                cout<<"Artist not added. "<<endl;
-        cout<<endl<<endl;
-        system("pause");
+    while (true) {
+        int choice = MenuView::editAlbumMenu();
+        if (!handleAlbumEditorChoice(choice, ArtFile, AlbFile, artist, album, result, delArtArray, delAlbArray)) {
+            break;
         }
-        if (choice ==2)
-            editAlbum(ArtFile,AlbFile,artist,album,result);
-        if (choice ==3)
-            deleteAlbum(ArtFile,AlbFile,artist,album,result,delAlbArray);
-        if (choice ==4)
-            exit=true;
-    }while(!exit);
+    }
     return true;
 }
 
@@ -2303,6 +2674,7 @@ CommandAction createAddAlbumCommand(Album album, std::fstream& AlbFile, albumLis
         if (idx == -1) {
             return;
         }
+        std::lock_guard<std::recursive_mutex> lock(g_fileMutex);
         if (ensureAlbumStream(AlbFile)) {
             AlbumFile blank = {"-1", "-1", "", "", "", ""};
             AlbFile.clear();
@@ -2379,6 +2751,7 @@ std::string getAlbumTitle()
     {
         cout << "Enter album title: ";
         getline(cin, title);
+        title = sanitizeStringInput(title, 79);
         try {
             validateAlbumTitle(title);
             break;
@@ -2397,6 +2770,7 @@ std::string getAlbumRecordFormat()
     do{
         cout << "Enter the record format of the album: ";
         getline(cin, albumFormat);
+        albumFormat = sanitizeStringInput(albumFormat, 11);
         try {
             validateAlbumFormat(albumFormat);
             break;
@@ -2438,6 +2812,7 @@ std::string getAlbumPath()
     do{
         cout << "Enter album path: ";
         getline(cin, albumPath);
+        albumPath = sanitizeStringInput(albumPath, 99);
         try {
             validateAlbumPath(albumPath);
             break;
@@ -2829,6 +3204,7 @@ CommandAction createDeleteAllAlbumsCommand(std::shared_ptr<std::vector<AlbumSnap
     CommandAction action;
     action.description = "Delete all albums for artist " + artist.artList[idx].name;
     action.redo = [&, state]() -> bool {
+        std::lock_guard<std::recursive_mutex> lock(g_fileMutex);
         std::fstream AlbFile;
         if (!ensureAlbumStream(AlbFile)) {
             return false;
@@ -2889,6 +3265,7 @@ CommandAction createDeleteSingleAlbumCommand(std::shared_ptr<AlbumRemovalState> 
     CommandAction action;
     action.description = "Delete album " + state->album.getTitle();
     action.redo = [&, state]() -> bool {
+        std::lock_guard<std::recursive_mutex> lock(g_fileMutex);
         std::fstream AlbFile;
         if (!ensureAlbumStream(AlbFile)) {
             return false;
@@ -3053,55 +3430,11 @@ bool searchAlbumByDateRange(std::fstream& AlbFile, const albumList& album, index
 void advancedSearchAlbums(std::fstream& AlbFile, const albumList& album, indexSet& result)
 {
     system("cls");
-    cout << "\nAdvanced Search Options:\n";
-    cout << "1. Search by Album Title\n";
-    cout << "2. Search by Date Range\n";
-    int choice = 0;
-    do {
-        cout << "Enter choice: ";
-        if (!(cin >> choice)) {
-            cin.clear();
-            cin.ignore(INT_MAX, '\n');
-            cout << "Invalid input. Please enter 1 or 2.\n";
-            choice = 0;
-            continue;
-        }
-        cin.ignore(INT_MAX, '\n');
-        if (choice != 1 && choice != 2) {
-            cout << "Invalid choice. Please enter 1 or 2.\n";
-        }
-    } while (choice != 1 && choice != 2);
-
+    int choice = promptAdvancedAlbumSearchChoice();
     if (choice == 1) {
-        std::string title;
-        cout << "Enter album title prefix: ";
-        getline(cin, title);
-        if (searchAlbumByTitle(AlbFile, album, result, title)) {
-            displayAlbumSearchResult(AlbFile, album, result);
-        } else {
-            printError(4);
-        }
-    } else if (choice == 2) {
-        unsigned int startDay, startMonth, startYear, endDay, endMonth, endYear;
-        cout << "Enter start date (DD/MM/YYYY): ";
-        while (!(cin >> startDay) || cin.get() != '/' || !(cin >> startMonth) || cin.get() != '/' || !(cin >> startYear)) {
-            cin.clear();
-            cin.ignore(INT_MAX, '\n');
-            cout << "Invalid date format. Please enter in DD/MM/YYYY format: ";
-        }
-        cin.ignore(INT_MAX, '\n');
-        cout << "Enter end date (DD/MM/YYYY): ";
-        while (!(cin >> endDay) || cin.get() != '/' || !(cin >> endMonth) || cin.get() != '/' || !(cin >> endYear)) {
-            cin.clear();
-            cin.ignore(INT_MAX, '\n');
-            cout << "Invalid date format. Please enter in DD/MM/YYYY format: ";
-        }
-        cin.ignore(INT_MAX, '\n');
-        if (searchAlbumByDateRange(AlbFile, album, result, startDay, startMonth, startYear, endDay, endMonth, endYear)) {
-            displayAlbumSearchResult(AlbFile, album, result);
-        } else {
-            printError(4);
-        }
+        runTitleBasedAlbumSearch(AlbFile, album, result);
+    } else {
+        runDateRangeAlbumSearch(AlbFile, album, result);
     }
     cout << endl << endl;
     system("pause");
@@ -3643,6 +3976,7 @@ void FileHandler::openFile(std::fstream& fstr, const std::string& path) {
 bool FileArtistRepository::loadArtists(artistList& artists, indexSet& deletedArtists) {
     Logger::getInstance()->log("Loading artists from file via repository");
     cout << "Loading artists..." << endl;
+    std::lock_guard<std::recursive_mutex> lock(g_fileMutex);
     
     fileStream = std::make_unique<std::fstream>();
     try {
@@ -3680,6 +4014,7 @@ bool FileArtistRepository::loadArtists(artistList& artists, indexSet& deletedArt
 }
 
 bool FileArtistRepository::saveArtist(const Artist& artist) {
+    std::lock_guard<std::recursive_mutex> lock(g_fileMutex);
     if (!fileStream || !fileStream->is_open()) {
         fileStream = std::make_unique<std::fstream>();
         try {
@@ -3711,6 +4046,7 @@ bool FileArtistRepository::saveArtist(const Artist& artist) {
 }
 
 bool FileArtistRepository::updateArtist(const Artist& artist, int position) {
+    std::lock_guard<std::recursive_mutex> lock(g_fileMutex);
     if (!fileStream || !fileStream->is_open()) {
         fileStream = std::make_unique<std::fstream>();
         try {
@@ -3742,6 +4078,7 @@ bool FileArtistRepository::updateArtist(const Artist& artist, int position) {
 }
 
 bool FileArtistRepository::deleteArtist(int position) {
+    std::lock_guard<std::recursive_mutex> lock(g_fileMutex);
     if (!fileStream || !fileStream->is_open()) {
         fileStream = std::make_unique<std::fstream>();
         try {
@@ -3764,6 +4101,7 @@ bool FileArtistRepository::deleteArtist(int position) {
 
 bool FileArtistRepository::saveArtists(const artistList& artists, const indexSet& deletedArtists) {
     Logger::getInstance()->log("Saving all artists to file via repository");
+    std::lock_guard<std::recursive_mutex> lock(g_fileMutex);
     
     fileStream = std::make_unique<std::fstream>();
     try {
@@ -3805,6 +4143,7 @@ bool FileArtistRepository::searchArtists(const std::string& query, indexSet& res
 bool FileAlbumRepository::loadAlbums(albumList& albums, indexSet& deletedAlbums) {
     Logger::getInstance()->log("Loading albums from file via repository");
     cout << "Loading albums..." << endl;
+    std::lock_guard<std::recursive_mutex> lock(g_fileMutex);
     
     fileStream = std::make_unique<std::fstream>();
     try {
@@ -3842,6 +4181,7 @@ bool FileAlbumRepository::loadAlbums(albumList& albums, indexSet& deletedAlbums)
 }
 
 bool FileAlbumRepository::saveAlbum(const Album& album) {
+    std::lock_guard<std::recursive_mutex> lock(g_fileMutex);
     if (!fileStream || !fileStream->is_open()) {
         fileStream = std::make_unique<std::fstream>();
         try {
@@ -3874,6 +4214,7 @@ bool FileAlbumRepository::saveAlbum(const Album& album) {
 }
 
 bool FileAlbumRepository::updateAlbum(const Album& album, int position) {
+    std::lock_guard<std::recursive_mutex> lock(g_fileMutex);
     if (!fileStream || !fileStream->is_open()) {
         fileStream = std::make_unique<std::fstream>();
         try {
@@ -3906,6 +4247,7 @@ bool FileAlbumRepository::updateAlbum(const Album& album, int position) {
 }
 
 bool FileAlbumRepository::deleteAlbum(int position) {
+    std::lock_guard<std::recursive_mutex> lock(g_fileMutex);
     if (!fileStream || !fileStream->is_open()) {
         fileStream = std::make_unique<std::fstream>();
         try {
@@ -3947,6 +4289,7 @@ bool FileAlbumRepository::searchAlbumsByDateRange(unsigned int startDay, unsigne
 
 bool FileAlbumRepository::saveAlbums(const albumList& albums, const indexSet& deletedAlbums) {
     Logger::getInstance()->log("Saving all albums to file via repository");
+    std::lock_guard<std::recursive_mutex> lock(g_fileMutex);
     
     fileStream = std::make_unique<std::fstream>();
     try {

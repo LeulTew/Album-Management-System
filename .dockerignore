@@ -1,0 +1,12 @@
+build/
+obj/
+bin/
+.vscode/
+.git/
+.gitignore
+*.cbp
+*.depend
+*.layout
+cmake-build-*/
+Album.bin
+Artist.bin

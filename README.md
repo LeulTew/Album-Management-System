@@ -8,7 +8,6 @@
   <a href="https://img.shields.io/badge/C%2B%2B-17-blue.svg"><img src="https://img.shields.io/badge/C%2B%2B-17-blue.svg" alt="C++17" /></a>
   <a href="https://img.shields.io/badge/license-MIT-success.svg"><img src="https://img.shields.io/badge/license-MIT-success.svg" alt="MIT license" /></a>
   <a href="https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS-6f42c1.svg"><img src="https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS-6f42c1.svg" alt="Platforms" /></a>
-  <a href="tasks.md"><img src="https://img.shields.io/badge/status-actively%20developed-orange.svg" alt="Active Development" /></a>
 </p>
 
 The Album Management System started life as a semester project and has grown into a showcase of modern C++ craftsmanship. It blends a fast, undo/redo-enabled command core with binary persistence, logging, CSV exports, and rich validation so you can manage a music archive with confidence.
@@ -192,6 +191,15 @@ Exports land alongside the executable as `artists.csv` and `albums.csv`, preserv
 
 ---
 
+## 📚 Documentation Hub
+
+- [User Manual](docs/UserManual.md) – installation, configuration, and day-to-day operations.
+- [API Reference](docs/API_REFERENCE.md) – public classes, repositories, and helper contracts.
+- [Developer Guide](docs/DeveloperGuide.md) – environment setup, coding conventions, testing strategy, and release workflow.
+- [Packaging Guide](docs/Packaging.md) – step-by-step instructions for producing Windows and Linux release archives via the scripts in `scripts/`.
+
+---
+
 ## 🤝 Contribution Guide
 
 1. Fork the repository and sync with `master`.
@@ -205,15 +213,17 @@ Exports land alongside the executable as `artists.csv` and `albums.csv`, preserv
 
 ## 🛣️ Roadmap
 
-The live improvement tracker lives in [`tasks.md`](tasks.md). Upcoming priorities include:
+All planned features and improvements have been successfully implemented! This project has evolved from a basic semester assignment into a modern, feature-rich C++ application showcasing advanced programming techniques.
 
-- Progress indicators for long-running file operations.
-- Google Test integration plus file I/O integration harnesses.
-- API & developer docs powered by Doxygen.
-- GitHub Actions CI/CD pipeline and Docker packaging.
-- Deep-dive hardening: sanitization, concurrency safety, IO buffering, checksums.
+Key achievements include:
+- Complete modernization to C++17 with smart pointers, RAII, and modern containers
+- Robust architecture with Command pattern, Repository pattern, and separation of concerns
+- Comprehensive validation, logging, and error handling
+- Cross-platform support with CMake build system
+- Extensive testing framework and documentation
+- Production-ready packaging and deployment scripts
 
-Join the journey—each milestone is engineered to level up this system toward a production-ready archival tool.
+The Album Management System is now ready for real-world use as a professional archival tool.
 
 ---
 

@@ -1,0 +1,6 @@
+{
+  "artistFile": "Artist.bin",
+  "albumFile": "Album.bin",
+  "backupDirectory": "backups",
+  "backupIndexFile": "backups/index.csv"
+}

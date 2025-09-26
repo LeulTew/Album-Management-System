@@ -25,10 +25,53 @@
 
 const int DEFAULT_SIZE = 10;
 extern int lastArtistID, lastAlbumID;
-const std::string artistFilePath = "Artist.bin";
-const std::string albumFilePath = "Album.bin";
-const std::string backupDirectory = "backups";
-const std::string backupIndexFile = "backups/index.csv";
+
+struct AppConfigSettings {
+    std::string artistFile;
+    std::string albumFile;
+    std::string backupDirectory;
+    std::string backupIndexFile;
+};
+
+class AppConfig {
+public:
+    static AppConfig& instance();
+    void loadFromFile(const std::string& path);
+    const AppConfigSettings& settings() const;
+    void resetToDefaults();
+
+private:
+    AppConfig();
+    void applyDerivedDefaults();
+    static std::string extractValue(const std::string& content, const std::string& key);
+
+    AppConfigSettings values;
+};
+
+class ConfigValue {
+public:
+    using Getter = const std::string& (*)();
+
+    constexpr explicit ConfigValue(Getter getter) : getter_(getter) {}
+
+    operator const std::string&() const { return getter_(); }
+    const std::string& str() const { return getter_(); }
+
+private:
+    Getter getter_;
+};
+
+const std::string& getArtistFilePath();
+const std::string& getAlbumFilePath();
+const std::string& getBackupDirectory();
+const std::string& getBackupIndexFile();
+
+extern const ConfigValue artistFilePath;
+extern const ConfigValue albumFilePath;
+extern const ConfigValue backupDirectory;
+extern const ConfigValue backupIndexFile;
+
+void loadApplicationConfig(const std::string& path);
 
 // Custom Exception Classes
 

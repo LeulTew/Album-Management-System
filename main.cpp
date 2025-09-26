@@ -18,6 +18,8 @@ using namespace std;
  */
 int main()
 {
+    loadApplicationConfig("config.json");
+
     // Create repository instances
     auto artistRepo = std::make_unique<FileArtistRepository>(artistFilePath);
     auto albumRepo = std::make_unique<FileAlbumRepository>(albumFilePath);
